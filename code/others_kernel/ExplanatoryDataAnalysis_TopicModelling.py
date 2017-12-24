@@ -160,7 +160,11 @@ plt.show()
 
 # ## **Item Category**
 # 
-# There are about **1,287** unique categories but among each of them, we will always see a main/general category firstly, followed by two more particular subcategories (e.g. Beauty/Makeup/Face or Lips). In adidition, there are about 6,327 items that do not have a category labels. Let's split the categories into three different columns. We will see later that this information is actually quite important from the seller's point of view and how we handle the missing information in the `brand_name` column will impact the model's prediction. 
+# There are about **1,287** unique categories but among each of them,
+# we will always see a main/general category firstly, followed by two more particular subcategories (e.g. Beauty/Makeup/Face or Lips).
+# In adidition, there are about 6,327 items that do not have a category labels.
+# Let's split the categories into three different columns.
+# We will see later that this information is actually quite important from the seller's point of view and how we handle the missing information in the `brand_name` column will impact the model's prediction.
 
 # In[12]:
 

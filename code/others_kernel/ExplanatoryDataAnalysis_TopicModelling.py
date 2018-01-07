@@ -320,7 +320,8 @@ def wordCount(text):
         # remove words in stop words
         words = [w for w in txt.split(" ")                  if not w in stop_words.ENGLISH_STOP_WORDS and len(w)>3]
         return len(words)
-    except: 
+    except Exception as e:
+        print(e)
         return 0
 
 
@@ -383,7 +384,7 @@ allWordsCount = Counter(flat_lst)
 all_top10 = allWordsCount.most_common(20)
 x = [w[0] for w in all_top10]
 y = [w[1] for w in all_top10]
-
+pct = [("%.2f"%(v*100))+"%"for v in (y/sum(allWordsCount.values()))]
 
 # In[38]:
 

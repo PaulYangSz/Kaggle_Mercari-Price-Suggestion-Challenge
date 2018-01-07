@@ -20,8 +20,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-train = pd.read_csv('../input/train.tsv', sep='\t')
-test = pd.read_csv('../input/test.tsv', sep='\t')
+train = pd.read_csv('../../input/train.tsv', sep='\t', engine='python')
+test = pd.read_csv('../../input/test.tsv', sep='\t', engine='python')
 
 train['target'] = np.log1p(train['price'])
 
@@ -93,7 +93,8 @@ train["seq_item_description"] = tok_raw.texts_to_sequences(train.item_descriptio
 test["seq_item_description"] = tok_raw.texts_to_sequences(test.item_description.str.lower())
 train["seq_name"] = tok_raw.texts_to_sequences(train.name.str.lower())
 test["seq_name"] = tok_raw.texts_to_sequences(test.name.str.lower())
-train.head(3)
+with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
+    print(train.head(3))
 
 print('[{}] Finished PROCESSING TEXT DATA...'.format(time.time() - start_time))
 

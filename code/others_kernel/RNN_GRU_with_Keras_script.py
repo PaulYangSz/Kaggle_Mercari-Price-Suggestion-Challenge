@@ -61,7 +61,7 @@ print('[{}] Finished handling missing data...'.format(time.time() - start_time))
 #PROCESS CATEGORICAL DATA
 from sklearn.preprocessing import LabelEncoder, MinMaxScaler, StandardScaler
 print("Handling categorical variables...")
-le = LabelEncoder()
+le = LabelEncoder()  # 给字符串或者其他对象编码
 
 le.fit(np.hstack([train.category_name, test.category_name]))
 train['category'] = le.transform(train.category_name)
@@ -84,7 +84,7 @@ raw_text = np.hstack([train.category_name.str.lower(),
                       train.item_description.str.lower(), 
                       train.name.str.lower()])
 
-tok_raw = Tokenizer()
+tok_raw = Tokenizer()  # 分割文本成词，然后将词转成编码
 tok_raw.fit_on_texts(raw_text)
 print("   Transforming text to seq...")
 train["seq_category_name"] = tok_raw.texts_to_sequences(train.category_name.str.lower())
@@ -126,7 +126,7 @@ print('[{}] Finished EMBEDDINGS MAX VALUE...'.format(time.time() - start_time))
 
 
 #KERAS DATA DEFINITION
-from keras.preprocessing.sequence import pad_sequences
+from keras.preprocessing.sequence import pad_sequences  # 默认在前面补零，或者抹掉前面
 
 def get_keras_data(dataset):
     X = {

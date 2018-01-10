@@ -200,14 +200,16 @@ def get_model():
     #Embeddings layers
     emb_size = 60
 
-    emb_name = Embedding(MAX_TEXT, emb_size//3)(name)
-    emb_item_desc = Embedding(MAX_TEXT, emb_size)(item_desc)
+    emb_name = Embedding(input_dim=MAX_TEXT, output_dim=emb_size//3)(name)  # Embedding的作用是配置字典size和词向量len后，根据call参数的indices，返回词向量.
+                                                                            # 类似TF的embedding_lookup
+                                                                            # name.shape=[None, MAX_NAME_SEQ], emb_name.shape=[None, MAX_NAME_SEQ, output_dim]
+    emb_item_desc = Embedding(MAX_TEXT, emb_size)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
     emb_category_name = Embedding(MAX_TEXT, emb_size//3)(category_name)
     emb_brand = Embedding(MAX_BRAND, 10)(brand)
     emb_category = Embedding(MAX_CATEGORY, 10)(category)
     emb_item_condition = Embedding(MAX_CONDITION, 5)(item_condition)
 
-    rnn_layer1 = GRU(16) (emb_item_desc)
+    rnn_layer1 = GRU(units=16) (emb_item_desc)  # GRU是配置输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
     rnn_layer2 = GRU(8) (emb_category_name)
     rnn_layer3 = GRU(8) (emb_name)
 
@@ -228,9 +230,9 @@ def get_model():
     output = Dense(1,activation="linear") (main_l)
 
     #model
-    model = Model([name, item_desc, brand
+    model = Model(inputs=[name, item_desc, brand
                    , category, category_name
-                   , item_condition, num_vars], output)
+                   , item_condition, num_vars], outputs=output)
     #optimizer = optimizers.RMSprop()
     optimizer = optimizers.Adam()
     model.compile(loss="mse",

@@ -209,13 +209,14 @@ def get_model():
     emb_category = Embedding(MAX_CATEGORY, 10)(category)
     emb_item_condition = Embedding(MAX_CONDITION, 5)(item_condition)
 
-    rnn_layer1 = GRU(units=16) (emb_item_desc)  # GRU是配置输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
+    rnn_layer1 = GRU(units=16) (emb_item_desc)  # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
+                                                # rnn_layer1.shape=[None, 16]
     rnn_layer2 = GRU(8) (emb_category_name)
     rnn_layer3 = GRU(8) (emb_name)
 
     #main layer
-    main_l = concatenate([
-        Flatten() (emb_brand)
+    main_l = concatenate([  # 连接列表中的Tensor，按照axis组成一个大的Tensor
+        Flatten() (emb_brand)  # [None, 1, 10] -> [None, 10]
         , Flatten() (emb_category)
         , Flatten() (emb_item_condition)
         , rnn_layer1

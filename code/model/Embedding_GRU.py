@@ -38,7 +38,7 @@ def simulate_test(test_data):
         return test_.copy()
     else:
         return test_data
-# TODO: Need or Not?
+# TODO: 5 folds scaling the test_df, Need or Not?
 test = simulate_test(test)
 print('new shape ', test.shape)
 print('[{}] Finished scaling test set...'.format(time.time() - start_time))

@@ -13,11 +13,10 @@ import matplotlib.pyplot as plt
 plt.rcParams['font.sans-serif']=['SimHei']  # 用来正常显示中文标签
 plt.rcParams['axes.unicode_minus']=False  # 用来正常显示负号
 
-from code.logging_config import ConfigLogginfDict
-
 
 def start_logging():
     # 加载前面的标准配置
+    from ProjectCodes.logging_config import ConfigLogginfDict
     logging.config.dictConfig(ConfigLogginfDict(__file__).LOGGING)
     # 获取loggers其中的一个日志管理器
     logger = logging.getLogger("default")
@@ -84,7 +83,7 @@ if __name__ == "__main__":
 
     Logger.info('【category_name列】：分析子类以及fillna')
     Logger.info('先看不为null的类别名字的特点：')
-    cat_name_have_df = all_df[all_df['category_name'].isnull() == False]
+    cat_name_have_df = all_df[all_df['category_name'].isnull() == False].copy()
     cat_name_have_df.loc[:, 'cat_num'] = cat_name_have_df.category_name.map(lambda name: len(name.split('/')))
     Logger.info('\n不为空的类别名字按照"/"来分割子类取得的子类个数\n{}'.format(cat_name_have_df['cat_num'].value_counts()))
     Logger.info('通过观察cat_num > 3的类别名字，我们暂时可以统一认为类别就是：主类/子类/子子类')

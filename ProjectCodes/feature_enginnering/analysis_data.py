@@ -10,8 +10,8 @@ import numpy as np
 import logging
 import logging.config
 import matplotlib.pyplot as plt
-plt.rcParams['font.sans-serif']=['SimHei']  # 用来正常显示中文标签
-plt.rcParams['axes.unicode_minus']=False  # 用来正常显示负号
+plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 
 
 def start_logging():
@@ -186,6 +186,32 @@ if __name__ == "__main__":
     Logger.info(
         'cat_is_null & brand_is_null & desc_is_null 个数{}, 占比{:.4%}'.
             format((all_df.cat_is_null & all_df.brand_is_null & all_df.desc_is_null).sum(), (all_df.cat_is_null & all_df.brand_is_null & all_df.desc_is_null).sum() / all_df.shape[0]))
+
+    # 为了更好的定义time steps的长度，看下统计量
+    Logger.info('查看name列，item_description列分词后的词长度统计')
+    from sklearn.feature_extraction.text import CountVectorizer
+    vectorizer = CountVectorizer(token_pattern=r"\b\w+\b")
+    tokenizer = vectorizer.build_tokenizer()
+
+    def get_text_words_len(text):
+        if pd.isnull(text):
+            return 0
+        else:
+            return len(tokenizer(text))
+    all_df.loc[:, 'name_words_len'] = all_df['name'].map(get_text_words_len)
+    name_words_len_quantile = all_df.name_words_len.quantile([q / 10.0 for q in range(1, 11)])
+    all_df.loc[:, 'desc_words_len'] = all_df['item_description'].map(get_text_words_len)
+    desc_words_len_quantile = all_df.desc_words_len.quantile([q / 10.0 for q in range(1, 11)])
+
+    def format_quantile_info(ser_quantil):
+        ret_quantil = ser_quantil.map(lambda x: '{}个词'.format(int(x)))
+        ret_quantil.name = 'name词长度的分位数值'
+        ret_quantil.index.name = '分位数'
+        ret_quantil.index = ret_quantil.index.map(lambda x: '{:.2%}'.format(x))
+        return ret_quantil
+    Logger.info('\nname列的词长度统计为：\n{}'.format(format_quantile_info(name_words_len_quantile)))
+    Logger.info('\nitem_description列的词长度统计为：\n{}'.format(format_quantile_info(desc_words_len_quantile)))
+
 
 
 

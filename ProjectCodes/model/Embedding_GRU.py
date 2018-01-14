@@ -48,8 +48,9 @@ print('[{}] Finished scaling test set...'.format(time.time() - start_time))
 print("Handling missing values...")
 
 
+# 对cat分类处理
 def handle_missing(dataset):
-    dataset.category_name.fillna(value="missing", inplace=True)
+    dataset.category_name.fillna(value="missing/missing/missing", inplace=True)
     dataset.brand_name.fillna(value="missing", inplace=True)
     dataset.item_description.fillna(value="missing", inplace=True)
     return dataset
@@ -66,9 +67,32 @@ print('[{}] Finished handling missing data...'.format(time.time() - start_time))
 print("Handling categorical variables...")
 le = LabelEncoder()  # 给字符串或者其他对象编码, 从0开始编码
 
-le.fit(np.hstack([train.category_name, test.category_name]))
-train['category'] = le.transform(train.category_name)
-test['category'] = le.transform(test.category_name)
+def split_cat_name(name, str_class):
+    sub_array = name.split('/')
+    if str_class == 'main':
+        return sub_array[0]
+    elif str_class == 'sub':
+        return sub_array[1]
+    else:
+        return '/'.join(sub_array[2:])
+def split_cat_df(df_data):
+    df_data.loc[:, 'cat_name_main'] = df_data.category_name.map(lambda x: split_cat_name(x, 'main'))
+    df_data.loc[:, 'cat_name_sub'] = df_data.category_name.map(lambda x: split_cat_name(x, 'sub'))
+    df_data.loc[:, 'cat_name_sub2'] = df_data.category_name.map(lambda x: split_cat_name(x, 'sub2'))
+split_cat_df(train)
+split_cat_df(test)
+# TODO: Need remain category_name to embedding?
+# del train['category_name']
+# del test['category_name']
+le.fit(np.hstack([train.cat_name_main, test.cat_name_main]))
+train['category_main'] = le.transform(train.cat_name_main)
+test['category_main'] = le.transform(test.cat_name_main)
+le.fit(np.hstack([train.cat_name_sub, test.cat_name_sub]))
+train['category_sub'] = le.transform(train.cat_name_sub)
+test['category_sub'] = le.transform(test.cat_name_sub)
+le.fit(np.hstack([train.cat_name_sub2, test.cat_name_sub2]))
+train['category_sub2'] = le.transform(train.cat_name_sub2)
+test['category_sub2'] = le.transform(test.cat_name_sub2)
 
 le.fit(np.hstack([train.brand_name, test.brand_name]))
 train['brand'] = le.transform(train.brand_name)
@@ -119,7 +143,9 @@ MAX_ALL_TEXT_DICT = np.max([np.max(train.seq_name.max()),
                             np.max(test.seq_category_name.max()),
                             np.max(train.seq_item_description.max()),
                             np.max(test.seq_item_description.max())]) + 2
-MAX_CATEGORY = np.max([train.category.max(), test.category.max()]) + 1  # LE编码后最大值+1
+MAX_CATEGORY_MAIN = np.max([train.category_main.max(), test.category_main.max()]) + 1  # LE编码后最大值+1
+MAX_CATEGORY_SUB = np.max([train.category_sub.max(), test.category_sub.max()]) + 1  # LE编码后最大值+1
+MAX_CATEGORY_SUB2 = np.max([train.category_sub2.max(), test.category_sub2.max()]) + 1  # LE编码后最大值+1
 MAX_BRAND = np.max([train.brand.max(), test.brand.max()])+1
 MAX_CONDITION = np.max([train.item_condition_id.max(),
                         test.item_condition_id.max()])+1
@@ -135,7 +161,9 @@ def get_keras_data(dataset):
         'name': pad_sequences(dataset.seq_name, maxlen=MAX_NAME_SEQ),
         'item_desc': pad_sequences(dataset.seq_item_description, maxlen=MAX_ITEM_DESC_SEQ),
         'brand': np.array(dataset.brand),
-        'category': np.array(dataset.category),
+        'category_main': np.array(dataset.category_main),
+        'category_sub': np.array(dataset.category_sub),
+        'category_sub2': np.array(dataset.category_sub2),
         'category_name': pad_sequences(dataset.seq_category_name, maxlen=MAX_CATEGORY_NAME_SEQ),
         'item_condition': np.array(dataset.item_condition_id),
         'num_vars': np.array(dataset[["shipping"]])
@@ -173,7 +201,9 @@ def get_model():
     name = Input(shape=[X_train["name"].shape[1]], name="name")
     item_desc = Input(shape=[X_train["item_desc"].shape[1]], name="item_desc")
     brand = Input(shape=[1], name="brand")
-    category = Input(shape=[1], name="category")
+    category_main = Input(shape=[1], name="category_main")
+    category_sub = Input(shape=[1], name="category_sub")
+    category_sub2 = Input(shape=[1], name="category_sub2")
     category_name = Input(shape=[X_train["category_name"].shape[1]],
                           name="category_name")
     item_condition = Input(shape=[1], name="item_condition")
@@ -189,7 +219,9 @@ def get_model():
     emb_item_desc = Embedding(MAX_ALL_TEXT_DICT, emb_size)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
     emb_category_name = Embedding(MAX_ALL_TEXT_DICT, emb_size // 3)(category_name)
     emb_brand = Embedding(MAX_BRAND, 10)(brand)
-    emb_category = Embedding(MAX_CATEGORY, 10)(category)
+    emb_category_main = Embedding(MAX_CATEGORY_MAIN, 10)(category_main)
+    emb_category_sub = Embedding(MAX_CATEGORY_SUB, 10)(category_sub)
+    emb_category_sub2 = Embedding(MAX_CATEGORY_SUB2, 10)(category_sub2)
     emb_item_condition = Embedding(MAX_CONDITION, 5)(item_condition)
 
     # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
@@ -200,7 +232,9 @@ def get_model():
     # main layer
     # 连接列表中的Tensor，按照axis组成一个大的Tensor
     main_l = concatenate([Flatten()(emb_brand),   # [None, 1, 10] -> [None, 10]
-                          Flatten()(emb_category),
+                          Flatten()(emb_category_main),
+                          Flatten()(emb_category_sub),
+                          Flatten()(emb_category_sub2),
                           Flatten()(emb_item_condition),
                           rnn_layer1,
                           rnn_layer2,
@@ -214,7 +248,7 @@ def get_model():
     output = Dense(1, activation="linear")(main_l)
 
     # model
-    model = Model(inputs=[name, item_desc, brand, category, category_name, item_condition, num_vars], outputs=output)
+    model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, category_name, item_condition, num_vars], outputs=output)
     # optimizer = optimizers.RMSprop()
     optimizer = optimizers.Adam()
     model.compile(loss="mse",

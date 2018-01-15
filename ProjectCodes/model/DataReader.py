@@ -57,6 +57,7 @@ def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_info
     通过前面的数据分析可以看到，name是不为空的，所以首先查看name中是否包含brand信息，找到匹配的brand集合
     其次使用item_description信息来缩小上述brand集合
     再次使用cat信息来看对应哪个brand最可能在这个cat上
+    :param row_ser: 包含所需列的row
     :param brand_known_ordered_list: 按照商品个数有序的品牌list
     :param brand_top_cat0_info_df: brand对应top1主类别和item数目
     """
@@ -113,9 +114,10 @@ def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_info
 
 
 class DataReader():
-    def __init__(self, local_flag:bool, cat_split_flag:bool, cat_fill_type:str, brand_fill_type:str, item_desc_fill_type:str):
-        Logger.info('\n构建数据DF时使用的参数：\n'
-                    'local_flag={}, '.format(local_flag, ))
+    def __init__(self, local_flag:bool, cat_fill_type:str, brand_fill_type:str, item_desc_fill_type:str):
+        if local_flag:
+            Logger.info('\n构建数据DF时使用的参数：\n'
+                        'local_flag={}, cat_fill_type={}, brand_fill_type={}, item_desc_fill_type={}'.format(local_flag, cat_fill_type, brand_fill_type, item_desc_fill_type))
         TRAIN_FILE = "../input/train.tsv"
         TEST_FILE = "../input/test.tsv"
 
@@ -125,6 +127,8 @@ class DataReader():
         else:
             train_df = pd.read_csv(TRAIN_FILE, sep='\t')
             test_df = pd.read_csv(TEST_FILE, sep='\t')
+
+
 
         def fill_item_description_null(str_desc, replace):
             if pd.isnull(str_desc):
@@ -146,12 +150,66 @@ class DataReader():
             train_df.loc[:, 'item_description'] = train_df[['item_description', 'name']].apply(lambda x: fill_item_description_null(x.iloc[0], x.iloc[1]), axis=1)
             test_df.loc[:, 'item_description'] = test_df['item_description', 'name'].apply(lambda x: fill_item_description_null(x.iloc[0], x.iloc[1]), axis=1)
         else:
-            print('【错误】：item_desc_fill_type shoulde be: "fill_" or "fill_paulnull" or "base_name"')
+            print('【错误】：item_desc_fill_type should be: "fill_" or "fill_paulnull" or "base_name"')
 
+
+
+
+        # 以防brand的名字中含有正则表达式中的特殊字符，所以将其统统转换为"_"
+        def rm_W_in_brand(str_brand):
+            if pd.isnull(str_brand):
+                return str_brand
+            else:
+                return re.sub(pattern="[\||^|$|?|+|*|#|!]", repl="_", string=str_brand)
+        train_df.loc[:, 'brand_name'] = train_df['brand_name'].map(rm_W_in_brand)
+        test_df.loc[:, 'brand_name'] = test_df['brand_name'].map(rm_W_in_brand)
         if brand_fill_type == 'fill_paulnull':
             train_df['brand_name'].fillna(value="paulnull", inplace=True)
             test_df['brand_name'].fillna(value="paulnull", inplace=True)
         elif brand_fill_type == 'base_other_cols':
+            all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
+            brand_cat_main_info_df = get_brand_top_cat0_info_df(all_df)
+            brand_known_list = all_df[~all_df['brand_name'].isnull()]['brand_name'].value_counts().index
+            train_df.loc[:, 'brand_name'] = train_df.apply(lambda row: base_other_cols_get_brand(brand_known_ordered_list=brand_known_list,
+                                                                                                 brand_top_cat0_info_df=brand_cat_main_info_df,
+                                                                                                 row_ser=row),
+                                                           axis=1)
+            test_df.loc[:, 'brand_name'] = test_df.apply(lambda row: base_other_cols_get_brand(brand_known_ordered_list=brand_known_list,
+                                                                                               brand_top_cat0_info_df=brand_cat_main_info_df,
+                                                                                               row_ser=row),
+                                                         axis=1)
+        else:
+            print('【错误】：brand_fill_type should be: "fill_paulnull" or "base_other_cols"')
+
+
+
+
+        if cat_fill_type == 'fill_paulnull':
+            train_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
+            test_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
+        elif cat_fill_type == 'base_brand':
+            all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]  # Update all_df
+            brand_cat_main_info_df = get_brand_top_cat0_info_df(all_df)
+
+            def get_cat_main_by_brand(brand_most_cat_main_df:pd.DataFrame, row_ser:pd.Series):
+                if pd.isnull(row_ser['category_name']):
+                    str_brand = row_ser['brand_name']
+                    if str_brand == 'paulnull' or str_brand not in brand_most_cat_main_df.index:
+                        str_cat_main = 'paulnull'
+                    else:
+                        str_cat_main = brand_most_cat_main_df.loc[str_brand, 'top_cat_main']
+                    return str_cat_main + '/paulnull/paulnull'
+                else:
+                    cat_name = row_ser['category_name']
+                    cat_classes = cat_name.split('/')
+                    if len(cat_classes) < 3:
+                        cat_name += "/paulnull" * (3 - len(cat_classes))
+                    return cat_name
+            train_df.loc[:, 'category_name'] = train_df.apply(lambda row: get_cat_main_by_brand(brand_cat_main_info_df, row))
+            test_df.loc[:, 'category_name'] = test_df.apply(lambda row: get_cat_main_by_brand(brand_cat_main_info_df, row))
+        else:
+            print('【错误】：cat_fill_type should be: "fill_paulnull" or "base_brand"')
+
 
 
 

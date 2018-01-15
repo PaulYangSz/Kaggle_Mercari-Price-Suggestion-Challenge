@@ -107,7 +107,8 @@ if __name__ == "__main__":
         Logger.info('\n观察类别主类各个价格情况\n{}'.format(cat_main_name_describe_df))
 
     Logger.info('【brand_name】：分析品牌的价格区间')
-    Logger.info('\n不同的品牌一共有多少种：\n{}'.format(all_df['brand_name'].value_counts().shape))
+    brand_n = len(set(all_df.brand_name.values))
+    Logger.info('不同的品牌一共有多少种：{}'.format(brand_n))
     top10_brand_describe_df = price_describe_by_col_value(train_df, train_df['brand_name'].value_counts()[:10])
     with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
         Logger.info('\n观察Top10品牌的价格情况\n{}'.format(top10_brand_describe_df))
@@ -117,6 +118,13 @@ if __name__ == "__main__":
     brand_cat_class_n_ = all_df['cat_main'].groupby(all_df['brand_name']).apply(lambda x: x.value_counts().size)
     Logger.info('\n品牌含有商品主类个数 | 品牌个数\n{}'.format(brand_cat_class_n_.value_counts()))
     Logger.info('可见绝大多数品牌只在一两个主类中存在')
+    Logger.info('将cat为空的去掉，再看下brand用有cat数目的关系')
+    all_df_have_cat = all_df[~all_df.category_name.isnull()]
+    remain_brand_n = len(set(all_df_have_cat.brand_name.values))
+    Logger.info('去掉cat为空的数据后，还剩{}个brand，也就是说有{}个brand对应的cat都为空'.format(remain_brand_n, brand_n - remain_brand_n))
+    all_df_have_cat.loc[:, 'cat_main'] = all_df_have_cat['category_name'].map(lambda x: split_cat_name(x, 'main'))
+    brand_cat_class_n_ = all_df_have_cat['cat_main'].groupby(all_df_have_cat['brand_name']).apply(lambda x: len(set(x.values)))
+    Logger.info('\n品牌含有商品主类个数 | 品牌个数\n{}'.format(brand_cat_class_n_.value_counts()))
 
     Logger.info('【shipping】：分析包邮与否的价格分布')
     price_shipBySeller = train_df.loc[train_df['shipping'] == 1, 'price']

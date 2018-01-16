@@ -70,10 +70,10 @@ def get_brand_top_cat0_info_df(df_source:pd.DataFrame):
     ret_brand_top_cat0_info_df = pd.DataFrame({'top_cat_main': top_cat_main_ser, 'item_count': top_cat_main_count_ser},
                                               index=index_brand,
                                               columns=['top_cat_main', 'item_count'])
-    return ret_brand_top_cat0_info_df
+    return ret_brand_top_cat0_info_df, ret_brand_top_cat0_info_df['top_cat_main'].to_dict()
 
 
-def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_info_df:pd.DataFrame, row_ser:pd.Series):
+def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_dict:dict, row_ser:pd.Series):
     """
     通过前面的数据分析可以看到，name是不为空的，所以首先查看name中是否包含brand信息，找到匹配的brand集合
     其次使用item_description信息来缩小上述brand集合 (暂停使用)
@@ -92,49 +92,57 @@ def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_info
             brand_finder = re.compile(r'\b' + brand + r'\b')  # re.I
             if brand_finder.search(name):
                 brand_in_name.append(brand)
-        if len(brand_in_name) == 1:
-            return brand_in_name[0]
-        else:
-            # 暂停使用description来查找brand
-            desc = row_ser['item_description']
-            brand_in_desc = list()
-            if not pd.isnull(desc):
-                for brand in brand_known_ordered_list:
-                    brand = rm_regex_char(brand)
-                    brand_finder = re.compile(r'\b' + brand + r'\b')  # re.I
-                    if brand_finder.search(desc):
-                        brand_in_desc.append(brand)
-
-        if len(brand_in_name) == 0:
-            brand_select = brand_in_desc
-        else:
-            if len(brand_in_desc) == 0:
-                brand_select = brand_in_name
-            else:
-                brand_inter = [brand_ for brand_ in brand_in_name if brand_ in brand_in_desc]
-                brand_select = brand_inter if len(brand_inter) > 0 else brand_in_name
-
-        if len(brand_select) == 1:
-            return brand_select[0]
-        elif len(brand_select) == 0:
-            return 'paulnull'
-        else:
+        if len(brand_in_name) > 0:
             if pd.isnull(row_ser['category_name']):
-                return brand_select[0]
+                return brand_in_name[0]
             else:
-                max_count = 0
-                ret_brand = ''
                 cat_main = row_ser['category_name'].split('/')[0]
-                for brand in brand_select:
-                    if brand_top_cat0_info_df.loc[brand, 'top_cat_main'] == cat_main:
-                        this_count = brand_top_cat0_info_df.loc[brand, 'item_count']
-                        if this_count >= max_count:
-                            max_count = this_count
-                            ret_brand = brand
-                if max_count == 0:
-                    return 'paulnull'
-                else:
-                    return ret_brand
+                for brand in brand_in_name:
+                    if brand in brand_top_cat0_dict and brand_top_cat0_dict[brand] == cat_main:
+                        return brand
+                return 'paulnull'
+        else:
+            return 'paulnull'
+            # 暂停使用description来查找brand
+            # desc = row_ser['item_description']
+            # brand_in_desc = list()
+            # if not pd.isnull(desc):
+            #     for brand in brand_known_ordered_list:
+            #         brand = rm_regex_char(brand)
+            #         brand_finder = re.compile(r'\b' + brand + r'\b')  # re.I
+            #         if brand_finder.search(desc):
+            #             brand_in_desc.append(brand)
+
+    #     if len(brand_in_name) == 0:
+    #         brand_select = brand_in_desc
+    #     else:
+    #         if len(brand_in_desc) == 0:
+    #             brand_select = brand_in_name
+    #         else:
+    #             brand_inter = [brand_ for brand_ in brand_in_name if brand_ in brand_in_desc]
+    #             brand_select = brand_inter if len(brand_inter) > 0 else brand_in_name
+    #
+    #     if len(brand_select) == 1:
+    #         return brand_select[0]
+    #     elif len(brand_select) == 0:
+    #         return 'paulnull'
+    #     else:
+    #         if pd.isnull(row_ser['category_name']):
+    #             return brand_select[0]
+    #         else:
+    #             max_count = 0
+    #             ret_brand = ''
+    #             cat_main = row_ser['category_name'].split('/')[0]
+    #             for brand in brand_select:
+    #                 if brand_top_cat0_info_df.loc[brand, 'top_cat_main'] == cat_main:
+    #                     this_count = brand_top_cat0_info_df.loc[brand, 'item_count']
+    #                     if this_count >= max_count:
+    #                         max_count = this_count
+    #                         ret_brand = brand
+    #             if max_count == 0:
+    #                 return 'paulnull'
+    #             else:
+    #                 return ret_brand
     else:
         return row_ser['brand_name']
 
@@ -201,17 +209,17 @@ class DataReader():
             test_df['brand_name'].fillna(value="paulnull", inplace=True)
         elif brand_fill_type == 'base_other_cols':
             all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
-            brand_cat_main_info_df = get_brand_top_cat0_info_df(all_df)
+            brand_cat_main_info_df, brand_cat_dict = get_brand_top_cat0_info_df(all_df)
             brand_known_list = all_df[~all_df['brand_name'].isnull()]['brand_name'].value_counts().index
             log = 'brand_name填充前, train中为空的有{}个, test为空的有{}个'.format(train_df['brand_name'].isnull().sum(),
                                                                      test_df['brand_name'].isnull().sum())
             record_log(local_flag, log)
             train_df.loc[:, 'brand_name'] = train_df.apply(lambda row: base_other_cols_get_brand(brand_known_ordered_list=brand_known_list,
-                                                                                                 brand_top_cat0_info_df=brand_cat_main_info_df,
+                                                                                                 brand_top_cat0_dict=brand_cat_dict,
                                                                                                  row_ser=row),
                                                            axis=1)
             test_df.loc[:, 'brand_name'] = test_df.apply(lambda row: base_other_cols_get_brand(brand_known_ordered_list=brand_known_list,
-                                                                                               brand_top_cat0_info_df=brand_cat_main_info_df,
+                                                                                               brand_top_cat0_dict=brand_cat_dict,
                                                                                                row_ser=row),
                                                          axis=1)
             log = 'brand_name填充后, train中为空的有{}个, test为空的有{}个'.format((train_df['brand_name']=='paulnull').sum(),
@@ -228,15 +236,15 @@ class DataReader():
             test_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
         elif cat_fill_type == 'base_brand':
             all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]  # Update all_df
-            brand_cat_main_info_df = get_brand_top_cat0_info_df(all_df)
+            brand_cat_main_info_df, brand_cat_dict = get_brand_top_cat0_info_df(all_df)
 
-            def get_cat_main_by_brand(brand_most_cat_main_df:pd.DataFrame, row_ser:pd.Series):
+            def get_cat_main_by_brand(brand_most_cat_dict:dict, row_ser:pd.Series):
                 if pd.isnull(row_ser['category_name']):
                     str_brand = row_ser['brand_name']
-                    if str_brand == 'paulnull' or str_brand not in brand_most_cat_main_df.index:
+                    if str_brand == 'paulnull' or str_brand not in brand_most_cat_dict:
                         str_cat_main = 'paulnull'
                     else:
-                        str_cat_main = brand_most_cat_main_df.loc[str_brand, 'top_cat_main']
+                        str_cat_main = brand_most_cat_dict[str_brand]
                     return str_cat_main + '/paulnull/paulnull'
                 else:
                     cat_name = row_ser['category_name']
@@ -247,8 +255,8 @@ class DataReader():
             log = 'category_name填充前, train中为空的有{}个, test为空的有{}个'.format(train_df['category_name'].isnull().sum(),
                                                                      test_df['category_name'].isnull().sum())
             record_log(local_flag, log)
-            train_df.loc[:, 'category_name'] = train_df.apply(lambda row: get_cat_main_by_brand(brand_cat_main_info_df, row))
-            test_df.loc[:, 'category_name'] = test_df.apply(lambda row: get_cat_main_by_brand(brand_cat_main_info_df, row))
+            train_df.loc[:, 'category_name'] = train_df.apply(lambda row: get_cat_main_by_brand(brand_cat_dict, row))
+            test_df.loc[:, 'category_name'] = test_df.apply(lambda row: get_cat_main_by_brand(brand_cat_dict, row))
             log = 'category_name填充后, train中为空的有{}个, test为空的有{}个'.format((train_df['category_name']=='paulnull/paulnull/paulnull').sum(),
                                                                      (test_df['category_name']=='paulnull/paulnull/paulnull').sum())
             record_log(local_flag, log)

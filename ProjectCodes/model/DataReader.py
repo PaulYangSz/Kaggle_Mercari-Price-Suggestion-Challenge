@@ -30,6 +30,13 @@ if 'Logger' not in dir():
     Logger = start_logging()
 
 
+def record_log(local_flag, str_log):
+    if local_flag:
+        Logger.info(str_log)
+    else:
+        print(str_log)
+
+
 def collect_W_char(str_from):
     if isinstance(str_from, str):
         W_finder = re.compile('\W')
@@ -154,18 +161,11 @@ def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_dict
         return row_ser['brand_name']
 
 
-def record_log(local_flag, str_log):
-    if local_flag:
-        Logger.info(str_log)
-    else:
-        print(str_log)
-
-
 class DataReader():
     def __init__(self, local_flag:bool, cat_fill_type:str, brand_fill_type:str, item_desc_fill_type:str):
-        if local_flag:
-            Logger.info('\n构建数据DF时使用的参数：\n'
-                        'local_flag={}, cat_fill_type={}, brand_fill_type={}, item_desc_fill_type={}'.format(local_flag, cat_fill_type, brand_fill_type, item_desc_fill_type))
+        record_log(local_flag, '\n构建数据DF时使用的参数：\n'
+                    'local_flag={}, cat_fill_type={}, brand_fill_type={}, item_desc_fill_type={}'
+                   .format(local_flag, cat_fill_type, brand_fill_type, item_desc_fill_type))
         TRAIN_FILE = "../input/train.tsv"
         TEST_FILE = "../input/test.tsv"
         self.local_flag = local_flag

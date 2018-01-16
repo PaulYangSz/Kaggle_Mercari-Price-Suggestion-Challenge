@@ -9,7 +9,7 @@ import time
 import pandas as pd
 import numpy as np
 
-from .DataReader import DataReader
+from ProjectCodes.model.DataReader import DataReader
 
 start_time = time.time()
 

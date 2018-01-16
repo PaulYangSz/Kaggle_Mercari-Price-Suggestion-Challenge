@@ -9,169 +9,54 @@ import time
 import pandas as pd
 import numpy as np
 
-from sklearn.preprocessing import LabelEncoder
-from keras.preprocessing.text import Tokenizer
-from sklearn.model_selection import train_test_split
-from keras.preprocessing.sequence import pad_sequences  # 默认在前面补零，或者抹掉前面
+from .DataReader import DataReader
 
 start_time = time.time()
 
 
 # TODO: Need modify when run on Kaggle kernel.
-train = pd.read_csv('../../input/train.tsv', sep='\t', engine='python')
-test = pd.read_csv('../../input/test.tsv', sep='\t', engine='python')
-
-
-train['target'] = np.log1p(train['price'])
-
-
-print(train.shape)
-print('5 folds scaling the test_df')
-print(test.shape)
-test_len = test.shape[0]
-
-
-def simulate_test(test_data):
-    if test_data.shape[0] < 800000:
-        indices = np.random.choice(test_data.index.values, 2800000)
-        test_ = pd.concat([test_data, test_data.iloc[indices]], axis=0)
-        return test_.copy()
-    else:
-        return test_data
-# TODO: 5 folds scaling the test_df, Need or Not?
-# test = simulate_test(test)
-print('new shape ', test.shape)
-print('[{}] Finished scaling test set...'.format(time.time() - start_time))
-
-
-# HANDLE MISSING VALUES
-print("Handling missing values...")
-
-
-# 对cat分类处理
-def handle_missing(dataset):
-    dataset.category_name.fillna(value="missing/missing/missing", inplace=True)
-    dataset.brand_name.fillna(value="missing", inplace=True)
-    dataset.item_description.fillna(value="missing", inplace=True)
-    return dataset
-
-train = handle_missing(train)
-test = handle_missing(test)
-print(train.shape)
-print(test.shape)
+data_reader = DataReader(local_flag=True, cat_fill_type='fill_paulnull', brand_fill_type='fill_paulnull', item_desc_fill_type='fill_')
+# Initial get fillna dataframe
+print(data_reader.train_df.shape)
+print(data_reader.test_df.shape)
 print('[{}] Finished handling missing data...'.format(time.time() - start_time))
 
 
 # PROCESS CATEGORICAL DATA
 # TODO: 需要改变下分类规则然后重新编码尝试结果
 print("Handling categorical variables...")
-le = LabelEncoder()  # 给字符串或者其他对象编码, 从0开始编码
-
-def split_cat_name(name, str_class):
-    sub_array = name.split('/')
-    if str_class == 'main':
-        return sub_array[0]
-    elif str_class == 'sub':
-        return sub_array[1]
-    else:
-        return '/'.join(sub_array[2:])
-def split_cat_df(df_data):
-    df_data.loc[:, 'cat_name_main'] = df_data.category_name.map(lambda x: split_cat_name(x, 'main'))
-    df_data.loc[:, 'cat_name_sub'] = df_data.category_name.map(lambda x: split_cat_name(x, 'sub'))
-    df_data.loc[:, 'cat_name_sub2'] = df_data.category_name.map(lambda x: split_cat_name(x, 'sub2'))
-split_cat_df(train)
-split_cat_df(test)
-# TODO: Need remain category_name to embedding?
-# del train['category_name']
-# del test['category_name']
-le.fit(np.hstack([train.cat_name_main, test.cat_name_main]))
-train['category_main'] = le.transform(train.cat_name_main)
-test['category_main'] = le.transform(test.cat_name_main)
-le.fit(np.hstack([train.cat_name_sub, test.cat_name_sub]))
-train['category_sub'] = le.transform(train.cat_name_sub)
-test['category_sub'] = le.transform(test.cat_name_sub)
-le.fit(np.hstack([train.cat_name_sub2, test.cat_name_sub2]))
-train['category_sub2'] = le.transform(train.cat_name_sub2)
-test['category_sub2'] = le.transform(test.cat_name_sub2)
-
-le.fit(np.hstack([train.brand_name, test.brand_name]))
-train['brand'] = le.transform(train.brand_name)
-test['brand'] = le.transform(test.brand_name)
-del le, train['brand_name'], test['brand_name']
-
+data_reader.le_encode()
 print('[{}] Finished PROCESSING CATEGORICAL DATA...'.format(time.time() - start_time))
 with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
-    print(train.head(3))
+    print(data_reader.train_df.head(3))
 
 
 # PROCESS TEXT: RAW
 print("Text to seq process...")
 print("   Fitting tokenizer...")
-raw_text = np.hstack([train.category_name.str.lower(),
-                      train.item_description.str.lower(),
-                      train.name.str.lower()])
-
-tok_raw = Tokenizer()  # 分割文本成词，然后将词转成编码(先分词，后编码)
-tok_raw.fit_on_texts(raw_text)
-print("   Transforming text to seq...")
-train["seq_category_name"] = tok_raw.texts_to_sequences(train.category_name.str.lower())
-test["seq_category_name"] = tok_raw.texts_to_sequences(test.category_name.str.lower())
-train["seq_item_description"] = tok_raw.texts_to_sequences(train.item_description.str.lower())
-test["seq_item_description"] = tok_raw.texts_to_sequences(test.item_description.str.lower())
-train["seq_name"] = tok_raw.texts_to_sequences(train.name.str.lower())
-test["seq_name"] = tok_raw.texts_to_sequences(test.name.str.lower())
+data_reader.tokenizer_text_col()
 with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
-    print(train.head(3))
+    print(data_reader.train_df.head(3))
 print('[{}] Finished PROCESSING TEXT DATA...'.format(time.time() - start_time))
-
-
-# EXTRACT DEVELOPMENT TEST
-dtrain, dvalid = train_test_split(train, random_state=666, train_size=0.99)
-print(dtrain.shape)
-print(dvalid.shape)
 
 
 # EMBEDDINGS MAX VALUE
 # Base on the histograms, we select the next lengths
 # TODO: TimeSteps的长度是否需要改变
-MAX_NAME_SEQ = 20  # 17 name列转texts_to_sequences后的list的最大长度，不足会补足，过长会截断
-MAX_ITEM_DESC_SEQ = 60  # 269, 同上，是item_description
-MAX_CATEGORY_NAME_SEQ = 20  # 8, 同上，是category_name列的
-MAX_ALL_TEXT_DICT = np.max([np.max(train.seq_name.max()),
-                            np.max(test.seq_name.max()),
-                            np.max(train.seq_category_name.max()),
-                            np.max(test.seq_category_name.max()),
-                            np.max(train.seq_item_description.max()),
-                            np.max(test.seq_item_description.max())]) + 2
-MAX_CATEGORY_MAIN = np.max([train.category_main.max(), test.category_main.max()]) + 1  # LE编码后最大值+1
-MAX_CATEGORY_SUB = np.max([train.category_sub.max(), test.category_sub.max()]) + 1  # LE编码后最大值+1
-MAX_CATEGORY_SUB2 = np.max([train.category_sub2.max(), test.category_sub2.max()]) + 1  # LE编码后最大值+1
-MAX_BRAND = np.max([train.brand.max(), test.brand.max()])+1
-MAX_CONDITION = np.max([train.item_condition_id.max(),
-                        test.item_condition_id.max()])+1
+data_reader.ensure_fixed_value()
 print('[{}] Finished EMBEDDINGS MAX VALUE...'.format(time.time() - start_time))
 
 
+# EXTRACT DEVELOPMENT TEST
+dtrain, dvalid, test = data_reader.split_get_train_validation()
+print(dtrain.shape)
+print(dvalid.shape)
+
+
 # KERAS DATA DEFINITION
-# name:名字词编号pad列表, item_desc:描述词编号pad列表,
-# brand:品牌编号, category:类别编号, category_name:类别词编号pad列表,
-# item_condition: item_condition_id, num_vars: shipping
-def get_keras_data(dataset):
-    X = {
-        'name': pad_sequences(dataset.seq_name, maxlen=MAX_NAME_SEQ),
-        'item_desc': pad_sequences(dataset.seq_item_description, maxlen=MAX_ITEM_DESC_SEQ),
-        'brand': np.array(dataset.brand),
-        'category_main': np.array(dataset.category_main),
-        'category_sub': np.array(dataset.category_sub),
-        'category_sub2': np.array(dataset.category_sub2),
-        'category_name': pad_sequences(dataset.seq_category_name, maxlen=MAX_CATEGORY_NAME_SEQ),
-        'item_condition': np.array(dataset.item_condition_id),
-        'num_vars': np.array(dataset[["shipping"]])
-    }
-    return X
-X_train = get_keras_data(dtrain)
-X_valid = get_keras_data(dvalid)
-X_test = get_keras_data(test)
+X_train = data_reader.get_keras_data(dtrain)
+X_valid = data_reader.get_keras_data(dvalid)
+X_test = data_reader.get_keras_data(test)
 print('[{}] Finished DATA PREPARATION...'.format(time.time() - start_time))
 
 
@@ -215,14 +100,14 @@ def get_model():
     # Embedding的作用是配置字典size和词向量len后，根据call参数的indices，返回词向量.
     #  类似TF的embedding_lookup
     #  name.shape=[None, MAX_NAME_SEQ], emb_name.shape=[None, MAX_NAME_SEQ, output_dim]
-    emb_name = Embedding(input_dim=MAX_ALL_TEXT_DICT, output_dim=emb_size // 3)(name)
-    emb_item_desc = Embedding(MAX_ALL_TEXT_DICT, emb_size)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
-    emb_category_name = Embedding(MAX_ALL_TEXT_DICT, emb_size // 3)(category_name)
-    emb_brand = Embedding(MAX_BRAND, 10)(brand)
-    emb_category_main = Embedding(MAX_CATEGORY_MAIN, 10)(category_main)
-    emb_category_sub = Embedding(MAX_CATEGORY_SUB, 10)(category_sub)
-    emb_category_sub2 = Embedding(MAX_CATEGORY_SUB2, 10)(category_sub2)
-    emb_item_condition = Embedding(MAX_CONDITION, 5)(item_condition)
+    emb_name = Embedding(input_dim=data_reader.n_text_dict_words, output_dim=emb_size // 3)(name)
+    emb_item_desc = Embedding(data_reader.n_text_dict_words, emb_size)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
+    emb_category_name = Embedding(data_reader.n_text_dict_words, emb_size // 3)(category_name)
+    emb_brand = Embedding(data_reader.n_brand, 10)(brand)
+    emb_category_main = Embedding(data_reader.n_cat_main, 10)(category_main)
+    emb_category_sub = Embedding(data_reader.n_cat_sub, 10)(category_sub)
+    emb_category_sub2 = Embedding(data_reader.n_cat_sub2, 10)(category_sub2)
+    emb_item_condition = Embedding(data_reader.n_condition_id, 5)(item_condition)
 
     # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
     rnn_layer1 = GRU(units=16)(emb_item_desc)  # rnn_layer1.shape=[None, 16]
@@ -309,8 +194,8 @@ print('[{}] Finished predicting valid set...'.format(time.time() - start_time))
 preds = model.predict(X_test, batch_size=BATCH_SIZE)
 preds = np.expm1(preds)
 print('[{}] Finished predicting test set...'.format(time.time() - start_time))
-submission = test[["test_id"]][:test_len]
-submission["price"] = preds[:test_len]
+submission = test[["test_id"]]
+submission["price"] = preds
 submission.to_csv("./myNN"+log_subdir+"_{:.6}.csv".format(v_rmsle), index=False)
 print('[{}] Finished submission...'.format(time.time() - start_time))
 

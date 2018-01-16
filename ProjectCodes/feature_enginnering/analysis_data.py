@@ -10,6 +10,8 @@ import numpy as np
 import logging
 import logging.config
 import matplotlib.pyplot as plt
+from functools import reduce
+
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
 plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 
@@ -125,6 +127,16 @@ if __name__ == "__main__":
     all_df_have_cat.loc[:, 'cat_main'] = all_df_have_cat['category_name'].map(lambda x: split_cat_name(x, 'main'))
     brand_cat_class_n_ = all_df_have_cat['cat_main'].groupby(all_df_have_cat['brand_name']).apply(lambda x: len(set(x.values)))
     Logger.info('\n品牌含有商品主类个数 | 品牌个数\n{}'.format(brand_cat_class_n_.value_counts()))
+    Logger.info('另外还需要看一点，就是brand中有多少\W字符存在，这个会影响后面用brand做正则匹配查找')
+    def collect_W_char(str_from):
+        if isinstance(str_from, str):
+            W_finder = re.compile('\W')
+            return set(W_finder.findall(str_from))
+        else:
+            return set()
+    def set_merge(set1, set2):
+        return set1.union(set2)
+    Logger.info('brand_name中存在的\W字符有：{}'.format(reduce(set_merge, list(map(collect_W_char, set(all_df.brand_name.values))))))
 
     Logger.info('【shipping】：分析包邮与否的价格分布')
     price_shipBySeller = train_df.loc[train_df['shipping'] == 1, 'price']

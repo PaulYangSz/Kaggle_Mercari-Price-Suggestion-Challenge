@@ -24,6 +24,27 @@ if 'Logger' not in dir():
     Logger = start_logging()
 
 
+def collect_W_char(str_from):
+    if isinstance(str_from, str):
+        W_finder = re.compile('\W')
+        return set(W_finder.findall(str_from))
+    else:
+        return set()
+
+
+def set_merge(set1, set2):
+    return set1.union(set2)
+
+
+def rm_regex_char(raw_str):
+    raw_str = raw_str.replace('?', "\?")
+    raw_str = raw_str.replace('*', "\*")
+    raw_str = raw_str.replace('.', "\.")
+    raw_str = raw_str.replace('|', "\|")
+    raw_str = raw_str.replace('+', "\+")
+    return raw_str
+
+
 def get_brand_top_cat0_info_df(df_source:pd.DataFrame):
     """
     brand -> [top_cat0_name, count]
@@ -55,7 +76,7 @@ def get_brand_top_cat0_info_df(df_source:pd.DataFrame):
 def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_info_df:pd.DataFrame, row_ser:pd.Series):
     """
     通过前面的数据分析可以看到，name是不为空的，所以首先查看name中是否包含brand信息，找到匹配的brand集合
-    其次使用item_description信息来缩小上述brand集合
+    其次使用item_description信息来缩小上述brand集合 (暂停使用)
     再次使用cat信息来看对应哪个brand最可能在这个cat上
     :param row_ser: 包含所需列的row
     :param brand_known_ordered_list: 按照商品个数有序的品牌list
@@ -65,17 +86,22 @@ def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_info
         name = row_ser['name']
         brand_in_name = list()
         for brand in brand_known_ordered_list:
-            brand_finder = re.compile(r'\b' + brand + r'\b', re.I)
+            # 在数据中，有的品牌名只会出现首个单词，不过看起来不像是大多数，所以索性还是从简单开始处理吧
+            # 有的品牌名称和普通单词接近，比如Select，Complete之类，所以尽管有nike这样的小写存在，但是还是先不考虑小写了。
+            brand = rm_regex_char(brand)
+            brand_finder = re.compile(r'\b' + brand + r'\b')  # re.I
             if brand_finder.search(name):
                 brand_in_name.append(brand)
         if len(brand_in_name) == 1:
             return brand_in_name[0]
         else:
+            # 暂停使用description来查找brand
             desc = row_ser['item_description']
             brand_in_desc = list()
             if not pd.isnull(desc):
                 for brand in brand_known_ordered_list:
-                    brand_finder = re.compile(r'\b' + brand + r'\b', re.I)
+                    brand = rm_regex_char(brand)
+                    brand_finder = re.compile(r'\b' + brand + r'\b')  # re.I
                     if brand_finder.search(desc):
                         brand_in_desc.append(brand)
 
@@ -111,6 +137,13 @@ def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_info
                     return ret_brand
     else:
         return row_ser['brand_name']
+
+
+def record_log(local_flag, str_log):
+    if local_flag:
+        Logger.info(str_log)
+    else:
+        print(str_log)
 
 
 class DataReader():
@@ -155,14 +188,14 @@ class DataReader():
 
 
 
-        # 以防brand的名字中含有正则表达式中的特殊字符，所以将其统统转换为"_"
+        # 以防brand的名字中含有正则表达式中的特殊字符，所以将其统统转换为"_". 目前不在这里做，在函数里面做，免得修改brand后匹配不上真正的
         def rm_W_in_brand(str_brand):
             if pd.isnull(str_brand):
                 return str_brand
             else:
                 return re.sub(pattern="[\||^|$|?|+|*|#|!]", repl="_", string=str_brand)
-        train_df.loc[:, 'brand_name'] = train_df['brand_name'].map(rm_W_in_brand)
-        test_df.loc[:, 'brand_name'] = test_df['brand_name'].map(rm_W_in_brand)
+        # train_df.loc[:, 'brand_name'] = train_df['brand_name'].map(rm_W_in_brand)
+        # test_df.loc[:, 'brand_name'] = test_df['brand_name'].map(rm_W_in_brand)
         if brand_fill_type == 'fill_paulnull':
             train_df['brand_name'].fillna(value="paulnull", inplace=True)
             test_df['brand_name'].fillna(value="paulnull", inplace=True)
@@ -170,6 +203,9 @@ class DataReader():
             all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
             brand_cat_main_info_df = get_brand_top_cat0_info_df(all_df)
             brand_known_list = all_df[~all_df['brand_name'].isnull()]['brand_name'].value_counts().index
+            log = 'brand_name填充前, train中为空的有{}个, test为空的有{}个'.format(train_df['brand_name'].isnull().sum(),
+                                                                     test_df['brand_name'].isnull().sum())
+            record_log(local_flag, log)
             train_df.loc[:, 'brand_name'] = train_df.apply(lambda row: base_other_cols_get_brand(brand_known_ordered_list=brand_known_list,
                                                                                                  brand_top_cat0_info_df=brand_cat_main_info_df,
                                                                                                  row_ser=row),
@@ -178,6 +214,9 @@ class DataReader():
                                                                                                brand_top_cat0_info_df=brand_cat_main_info_df,
                                                                                                row_ser=row),
                                                          axis=1)
+            log = 'brand_name填充后, train中为空的有{}个, test为空的有{}个'.format((train_df['brand_name']=='paulnull').sum(),
+                                                                     (test_df['brand_name']=='paulnull').sum())
+            record_log(local_flag, log)
         else:
             print('【错误】：brand_fill_type should be: "fill_paulnull" or "base_other_cols"')
 
@@ -205,8 +244,14 @@ class DataReader():
                     if len(cat_classes) < 3:
                         cat_name += "/paulnull" * (3 - len(cat_classes))
                     return cat_name
+            log = 'category_name填充前, train中为空的有{}个, test为空的有{}个'.format(train_df['category_name'].isnull().sum(),
+                                                                     test_df['category_name'].isnull().sum())
+            record_log(local_flag, log)
             train_df.loc[:, 'category_name'] = train_df.apply(lambda row: get_cat_main_by_brand(brand_cat_main_info_df, row))
             test_df.loc[:, 'category_name'] = test_df.apply(lambda row: get_cat_main_by_brand(brand_cat_main_info_df, row))
+            log = 'category_name填充后, train中为空的有{}个, test为空的有{}个'.format((train_df['category_name']=='paulnull/paulnull/paulnull').sum(),
+                                                                     (test_df['category_name']=='paulnull/paulnull/paulnull').sum())
+            record_log(local_flag, log)
         else:
             print('【错误】：cat_fill_type should be: "fill_paulnull" or "base_brand"')
 

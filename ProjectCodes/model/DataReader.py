@@ -378,7 +378,7 @@ class DataReader():
         :return:
         """
         X = {
-            'name': pad_sequences(dataset.name_int_seq, maxlen=self.name_seq_len),
+            'name': pad_sequences(dataset['name_int_seq'], maxlen=self.name_seq_len),
             'item_desc': pad_sequences(dataset.desc_int_seq, maxlen=self.item_desc_seq_len),
             'brand': np.array(dataset.brand_le),
             'category_main': np.array(dataset.cat_main_le),

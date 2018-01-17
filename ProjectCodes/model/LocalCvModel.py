@@ -147,13 +147,13 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
             Returns self.
         """
         # Check that X and y have correct shape
-        X, y = check_X_y(X, y)
+        # X, y = check_X_y(X, y)  # ValueError: setting an array element with a sequence. This is caused by "XXX_seq"
 
         self.X_ = X
         self.y_ = y
 
         # FITTING THE MODEL
-        steps = int(X.shape()[0] / self.batch_size) * self.epochs
+        steps = int(X.shape[0] / self.batch_size) * self.epochs
         # final_lr=init_lr * (1/(1+decay))**(steps-1)
         exp_decay = lambda init, final, step_num: (init / final) ** (1 / (step_num - 1)) - 1
         lr_decay = exp_decay(self.lr_init, self.lr_final, steps)
@@ -166,7 +166,7 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
 
         print('~~~~~~~~~~~~In fit() type(X): {}'.format(type(X)))
         keras_X = self.data_reader.get_keras_data(X)
-        history = self.emb_GRU_model.fit(keras_X, y, epochs=self.epochs, batch_size=self.batch_size, validation_split=0.01,
+        history = self.emb_GRU_model.fit(keras_X, y, epochs=self.epochs, batch_size=self.batch_size, validation_split=0., # 0.01
                                          # callbacks=[TensorBoard('./logs/'+log_subdir)],
                                          verbose=10)
 
@@ -189,7 +189,7 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
         check_is_fitted(self, ['X_', 'y_'])
 
         # Input validation
-        X = check_array(X)
+        # X = check_array(X)  # ValueError: setting an array element with a sequence. This is caused by "XXX_seq"
 
         keras_X = self.data_reader.get_keras_data(X)
         return self.emb_GRU_model.predict(keras_X, batch_size=self.batch_size)
@@ -238,8 +238,9 @@ def print_param(cv_grid_params:CvGridParams):
     return search_param_list
 
 
-def train_model_with_gridsearch(regress_model, sample_df, cv_grid_params):
+def train_model_with_gridsearch(regress_model:LocalRegressor, sample_df, cv_grid_params):
     sample_X = sample_df.drop('target', axis=1)
+    sample_X = sample_X[['name_int_seq', 'desc_int_seq', 'brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'cat_int_seq', 'item_condition_id', 'shipping']]
     sample_y = sample_df['target']
 
     # Check the list of available parameters with `estimator.get_params().keys()`

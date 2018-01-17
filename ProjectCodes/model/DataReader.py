@@ -386,7 +386,7 @@ class DataReader():
             'category_sub2': np.array(dataset.cat_sub2_le),
             'category_name': pad_sequences(dataset.cat_int_seq, maxlen=self.cat_name_seq_len),
             'item_condition': np.array(dataset.item_condition_id),
-            'num_vars': np.array(dataset[["shipping"]])
+            'num_vars': np.array(dataset[['shipping']])
         }
         return X
 

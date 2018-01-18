@@ -170,7 +170,7 @@ def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_dict
     else:
         return row_ser['brand_name']
 
-# TODO: 可以尝试加入cat来判断
+# TODO: base_name_get_brand可以尝试加入cat来判断，因为这个可能不是耗时的重点(不过一旦加入就要轮询band_list到底了)
 def base_name_get_brand(rm_regex_brand_known_ordered_list:list, str_name):
     """
     通过前面的数据分析可以看到，name是不为空的，所以首先查看name中是否包含brand信息，找到匹配的brand集合
@@ -197,8 +197,8 @@ class DataReader():
         self.item_desc_fill_type = item_desc_fill_type
 
         if local_flag:
-            train_df = pd.read_csv("../" + TRAIN_FILE, sep='\t', engine='python', nrows=1000)
-            test_df = pd.read_csv("../" + TEST_FILE, sep='\t', engine='python', nrows=1000)
+            train_df = pd.read_csv("../" + TRAIN_FILE, sep='\t', engine='python')
+            test_df = pd.read_csv("../" + TEST_FILE, sep='\t', engine='python')
         else:
             train_df = pd.read_csv(TRAIN_FILE, sep='\t')
             test_df = pd.read_csv(TEST_FILE, sep='\t')
@@ -291,8 +291,8 @@ class DataReader():
             log = '\ncategory_name填充前, train中为空的有{}个, test为空的有{}个'.format(train_df['category_name'].isnull().sum(),
                                                                      test_df['category_name'].isnull().sum())
             record_log(local_flag, log)
-            train_df.loc[:, 'category_name'] = train_df.apply(lambda row: get_cat_main_by_brand(brand_cat_dict, row))
-            test_df.loc[:, 'category_name'] = test_df.apply(lambda row: get_cat_main_by_brand(brand_cat_dict, row))
+            train_df.loc[:, 'category_name'] = train_df.apply(lambda row: get_cat_main_by_brand(brand_cat_dict, row), axis=1)
+            test_df.loc[:, 'category_name'] = test_df.apply(lambda row: get_cat_main_by_brand(brand_cat_dict, row), axis=1)
             log = '\ncategory_name填充后, train中为空的有{}个, test为空的有{}个'.format((train_df['category_name']=='paulnull/paulnull/paulnull').sum(),
                                                                      (test_df['category_name']=='paulnull/paulnull/paulnull').sum())
             record_log(local_flag, log)

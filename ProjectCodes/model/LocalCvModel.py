@@ -216,7 +216,7 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'name_emb_dim': [20],
+                'name_emb_dim': [20],  # In name each word's vector length
                 'item_desc_emb_dim': [60],
                 'cat_name_emb_dim': [20],
                 'brand_emb_dim': [10],
@@ -224,7 +224,7 @@ class CvGridParams(object):
                 'cat_sub_emb_dim': [10],
                 'cat_sub2_emb_dim': [10],
                 'item_cond_id_emb_dim': [5],
-                'GRU_layers_out_dim': [(8, 16, 8)],
+                'GRU_layers_out_dim': [(8, 16, 8)],  # GRU hidden units
                 'drop_out_layers': [(0.25, 0.1)],
                 'dense_layers_dim': [(128, 64)],
                 'epochs': [3],
@@ -333,7 +333,6 @@ if __name__ == "__main__":
     Logger.info('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
     # PROCESS CATEGORICAL DATA
-    # TODO: 需要改变下分类规则然后重新编码尝试结果
     Logger.info("Handling categorical variables...")
     data_reader.le_encode()
     Logger.info('[{:.4f}s] Finished PROCESSING CATEGORICAL DATA...'.format(time.time() - start_time))
@@ -352,7 +351,6 @@ if __name__ == "__main__":
 
     # EMBEDDINGS MAX VALUE
     # Base on the histograms, we select the next lengths
-    # TODO: TimeSteps的长度是否需要改变
     data_reader.ensure_fixed_value()
     Logger.info('[{:.4f}s] Finished EMBEDDINGS MAX VALUE...'.format(time.time() - start_time))
 

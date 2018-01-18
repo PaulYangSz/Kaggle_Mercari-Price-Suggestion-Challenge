@@ -4,18 +4,24 @@
 # Borrowing some embedding and GRU process idea
 
 
+from ProjectCodes.model.DataReader import DataReader
+
 import gc
 import time
 import pandas as pd
 import numpy as np
-
-from ProjectCodes.model.DataReader import DataReader
+import platform
 
 start_time = time.time()
 
 
 # TODO: Need modify when run on Kaggle kernel.
-data_reader = DataReader(local_flag=True, cat_fill_type='fill_paulnull', brand_fill_type='fill_paulnull', item_desc_fill_type='fill_')
+if platform.system() == 'Windows':
+    LOCAL_FLAG = True
+else:
+    LOCAL_FLAG = False
+data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='fill_paulnull', item_desc_fill_type='fill_')
+# data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='base_brand', brand_fill_type='base_name', item_desc_fill_type='base_name')
 # Initial get fillna dataframe
 print(data_reader.train_df.shape)
 print(data_reader.test_df.shape)
@@ -194,7 +200,7 @@ print('[{}] Finished predicting valid set...'.format(time.time() - start_time))
 preds = model.predict(X_test, batch_size=BATCH_SIZE)
 preds = np.expm1(preds)
 print('[{}] Finished predicting test set...'.format(time.time() - start_time))
-submission = test[["test_id"]]
+submission = test[["test_id"]].copy()
 submission["price"] = preds
 submission.to_csv("./myNN"+log_subdir+"_{:.6}.csv".format(v_rmsle), index=False)
 print('[{}] Finished submission...'.format(time.time() - start_time))

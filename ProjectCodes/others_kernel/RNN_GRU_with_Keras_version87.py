@@ -51,9 +51,8 @@ def to_categorical(dataset):
     dataset['item_condition_id'] = dataset['item_condition_id'].astype('category')
 
 
-# TODO:
-train = pd.read_csv('../../input/train.tsv', sep='\t', engine='python', nrows=10)
-test = pd.read_csv('../../input/test.tsv', sep='\t', engine='python', nrows=10)
+df_train = train = pd.read_csv('../../input/train.tsv', sep='\t', engine='python', nrows=10)
+df_test = test = pd.read_csv('../../input/test.tsv', sep='\t', engine='python', nrows=10)
 
 train['target'] = np.log1p(train['price'])
 
@@ -69,7 +68,6 @@ def simulate_test(test):
         return test_.copy()
     else:
         return test
-# TODO:
 # test = simulate_test(test)
 print('new shape ', test.shape)
 print('[{}] Finished scaling test set...'.format(time.time() - start_time))
@@ -94,7 +92,7 @@ print('[{}] Finished handling missing data...'.format(time.time() - start_time))
 #PROCESS CATEGORICAL DATA
 from sklearn.preprocessing import LabelEncoder, MinMaxScaler, StandardScaler
 print("Handling categorical variables...")
-le = LabelEncoder()  # ¸ø×Ö·û´®»òÕßÆäËû¶ÔÏó±àÂë, ´Ó0¿ªÊ¼±àÂë
+le = LabelEncoder()  # ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, ï¿½ï¿½0ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½
 
 le.fit(np.hstack([train.category_name, test.category_name]))
 train['category'] = le.transform(train.category_name)
@@ -124,7 +122,7 @@ raw_text = np.hstack([train.category_name.str.lower(),
                       train.item_description.str.lower(), 
                       train.name.str.lower()])
 
-tok_raw = Tokenizer()  # ·Ö¸îÎÄ±¾³É´Ê£¬È»ºó½«´Ê×ª³É±àÂë(ÏÈ·Ö´Ê£¬ºó±àÂë)
+tok_raw = Tokenizer()  # ï¿½Ö¸ï¿½ï¿½Ä±ï¿½ï¿½É´Ê£ï¿½È»ï¿½ó½«´ï¿½×ªï¿½É±ï¿½ï¿½ï¿½(ï¿½È·Ö´Ê£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½)
 tok_raw.fit_on_texts(raw_text)
 print("   Transforming text to seq...")
 train["seq_category_name"] = tok_raw.texts_to_sequences(train.category_name.str.lower())
@@ -154,16 +152,16 @@ print(dvalid.shape)
 
 #EMBEDDINGS MAX VALUE
 #Base on the histograms, we select the next lengths
-MAX_NAME_SEQ = 20 #17 nameÁÐ×ªtexts_to_sequencesºóµÄlistµÄ×î´ó³¤¶È£¬²»×ã»á²¹×ã£¬¹ý³¤»á½Ø¶Ï
-MAX_ITEM_DESC_SEQ = 60 #269, Í¬ÉÏ£¬ÊÇitem_description
-MAX_CATEGORY_NAME_SEQ = 20 #8, Í¬ÉÏ£¬ÊÇcategory_nameÁÐµÄ
+MAX_NAME_SEQ = 20 #17 nameï¿½ï¿½×ªtexts_to_sequencesï¿½ï¿½ï¿½listï¿½ï¿½ï¿½ï¿½ó³¤¶È£ï¿½ï¿½ï¿½ï¿½ï¿½á²¹ï¿½ã£¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ø¶ï¿½
+MAX_ITEM_DESC_SEQ = 60 #269, Í¬ï¿½Ï£ï¿½ï¿½ï¿½item_description
+MAX_CATEGORY_NAME_SEQ = 20 #8, Í¬ï¿½Ï£ï¿½ï¿½ï¿½category_nameï¿½Ðµï¿½
 MAX_TEXT = np.max([np.max(train.seq_name.max())
                    , np.max(test.seq_name.max())
                    , np.max(train.seq_category_name.max())
                    , np.max(test.seq_category_name.max())
                    , np.max(train.seq_item_description.max())
                    , np.max(test.seq_item_description.max())])+2
-MAX_CATEGORY = np.max([train.category.max(), test.category.max()])+1  # LE±àÂëºó×î´óÖµ+1
+MAX_CATEGORY = np.max([train.category.max(), test.category.max()])+1  # LEï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öµ+1
 MAX_BRAND = np.max([train.brand.max(), test.brand.max()])+1
 MAX_CONDITION = np.max([train.item_condition_id.max(), 
                         test.item_condition_id.max()])+1
@@ -172,7 +170,7 @@ print('[{}] Finished EMBEDDINGS MAX VALUE...'.format(time.time() - start_time))
 
 
 #KERAS DATA DEFINITION
-from keras.preprocessing.sequence import pad_sequences  # Ä¬ÈÏÔÚÇ°Ãæ²¹Áã£¬»òÕßÄ¨µôÇ°Ãæ
+from keras.preprocessing.sequence import pad_sequences  # Ä¬ï¿½ï¿½ï¿½ï¿½Ç°ï¿½æ²¹ï¿½ã£¬ï¿½ï¿½ï¿½ï¿½Ä¨ï¿½ï¿½Ç°ï¿½ï¿½
 
 def get_keras_data(dataset):
     X = {
@@ -188,8 +186,8 @@ def get_keras_data(dataset):
     }
     return X
 
-X_train = get_keras_data(dtrain)  # name:Ãû×Ö´Ê±àºÅpadÁÐ±í, item_desc:ÃèÊö´Ê±àºÅpadÁÐ±í,
-                                  # brand:Æ·ÅÆ±àºÅ, category:Àà±ð±àºÅ, category_name:Àà±ð´Ê±àºÅpadÁÐ±í,
+X_train = get_keras_data(dtrain)  # name:ï¿½ï¿½ï¿½Ö´Ê±ï¿½ï¿½padï¿½Ð±ï¿½, item_desc:ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½padï¿½Ð±ï¿½,
+                                  # brand:Æ·ï¿½Æ±ï¿½ï¿½, category:ï¿½ï¿½ï¿½ï¿½ï¿½, category_name:ï¿½ï¿½ï¿½Ê±ï¿½ï¿½padï¿½Ð±ï¿½,
                                   # item_condition: item_condition_id, num_vars: shipping
 X_valid = get_keras_data(dvalid)
 X_test = get_keras_data(test)
@@ -233,8 +231,8 @@ def get_model():
     #Embeddings layers
     emb_size = 60
     
-    emb_name = Embedding(input_dim=MAX_TEXT, output_dim=emb_size//3)(name)  # EmbeddingµÄ×÷ÓÃÊÇÅäÖÃ×ÖµäsizeºÍ´ÊÏòÁ¿lenºó£¬¸ù¾Ýcall²ÎÊýµÄindices£¬·µ»Ø´ÊÏòÁ¿.
-                                                                            # ÀàËÆTFµÄembedding_lookup
+    emb_name = Embedding(input_dim=MAX_TEXT, output_dim=emb_size//3)(name)  # Embeddingï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öµï¿½sizeï¿½Í´ï¿½ï¿½ï¿½ï¿½ï¿½lenï¿½ó£¬¸ï¿½ï¿½ï¿½callï¿½ï¿½ï¿½ï¿½ï¿½ï¿½indicesï¿½ï¿½ï¿½ï¿½ï¿½Ø´ï¿½ï¿½ï¿½ï¿½ï¿½.
+                                                                            # ï¿½ï¿½ï¿½ï¿½TFï¿½ï¿½embedding_lookup
                                                                             # name.shape=[None, MAX_NAME_SEQ], emb_name.shape=[None, MAX_NAME_SEQ, output_dim]
     emb_item_desc = Embedding(MAX_TEXT, emb_size)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
     emb_category_name = Embedding(MAX_TEXT, emb_size//3)(category_name)
@@ -242,13 +240,13 @@ def get_model():
     emb_category = Embedding(MAX_CATEGORY, 10)(category)
     emb_item_condition = Embedding(MAX_CONDITION, 5)(item_condition)
 
-    rnn_layer1 = GRU(units=16) (emb_item_desc)  # GRUÊÇÅäÖÃÒ»¸öcellÊä³öµÄunits³¤¶Èºó£¬¸ù¾Ýcall´ÊÏòÁ¿Èë²Î,Êä³ö×îºóÒ»¸öGRU cellµÄÊä³ö(ÒòÎªÄ¬ÈÏreturn_sequences=False)
+    rnn_layer1 = GRU(units=16) (emb_item_desc)  # GRUï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½cellï¿½ï¿½ï¿½ï¿½ï¿½unitsï¿½ï¿½ï¿½Èºó£¬¸ï¿½ï¿½ï¿½callï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½,ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½GRU cellï¿½ï¿½ï¿½ï¿½ï¿½(ï¿½ï¿½ÎªÄ¬ï¿½ï¿½return_sequences=False)
                                                 # rnn_layer1.shape=[None, 16]
     rnn_layer2 = GRU(8) (emb_category_name)
     rnn_layer3 = GRU(8) (emb_name)
     
     #main layer
-    main_l = concatenate([  # Á¬½ÓÁÐ±íÖÐµÄTensor£¬°´ÕÕaxis×é³ÉÒ»¸ö´óµÄTensor
+    main_l = concatenate([  # ï¿½ï¿½ï¿½ï¿½ï¿½Ð±ï¿½ï¿½Ðµï¿½Tensorï¿½ï¿½ï¿½ï¿½ï¿½ï¿½axisï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Tensor
         Flatten() (emb_brand)  # [None, 1, 10] -> [None, 10]
         , Flatten() (emb_category)
         , Flatten() (emb_item_condition)

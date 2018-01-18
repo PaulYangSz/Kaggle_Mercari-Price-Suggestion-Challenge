@@ -326,17 +326,20 @@ if __name__ == "__main__":
     # 1. Get sample and last validation data.
     # Get Data include some pre-process.
     # Initial get fillna dataframe
-    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='fill_paulnull', item_desc_fill_type='fill_')
-    Logger.info('[{}] Finished handling missing data...'.format(time.time() - start_time))
+    # cat_fill_type= 'fill_paulnull' or 'base_brand'
+    # brand_fill_type= 'fill_paulnull' or 'base_other_cols'
+    # item_desc_fill_type= 'fill_' or 'fill_paulnull' or 'base_name'
+    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
+    Logger.info('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
     # PROCESS CATEGORICAL DATA
     # TODO: 需要改变下分类规则然后重新编码尝试结果
     Logger.info("Handling categorical variables...")
     data_reader.le_encode()
-    Logger.info('[{}] Finished PROCESSING CATEGORICAL DATA...'.format(time.time() - start_time))
+    Logger.info('[{:.4f}s] Finished PROCESSING CATEGORICAL DATA...'.format(time.time() - start_time))
     with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
                            'display.height', None):
-        Logger.info(data_reader.train_df.head(3))
+        Logger.info('\n{}'.format(data_reader.train_df.head(3)))
 
     # PROCESS TEXT: RAW
     Logger.info("Text to seq process...")
@@ -344,14 +347,14 @@ if __name__ == "__main__":
     data_reader.tokenizer_text_col()
     with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
                            'display.height', None):
-        Logger.info(data_reader.train_df.head(3))
-    Logger.info('[{}] Finished PROCESSING TEXT DATA...'.format(time.time() - start_time))
+        Logger.info('\n{}'.format(data_reader.train_df.head(3)))
+    Logger.info('[{:.4f}s] Finished PROCESSING TEXT DATA...'.format(time.time() - start_time))
 
     # EMBEDDINGS MAX VALUE
     # Base on the histograms, we select the next lengths
     # TODO: TimeSteps的长度是否需要改变
     data_reader.ensure_fixed_value()
-    Logger.info('[{}] Finished EMBEDDINGS MAX VALUE...'.format(time.time() - start_time))
+    Logger.info('[{:.4f}s] Finished EMBEDDINGS MAX VALUE...'.format(time.time() - start_time))
 
     # EXTRACT DEVELOPMENT TEST
     sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
@@ -369,7 +372,7 @@ if __name__ == "__main__":
     regress_model = LocalRegressor(data_reader=data_reader)
     print('Begin to train self-defined sklearn-API regressor.')
     reg = train_model_with_gridsearch(regress_model, sample_df, cv_grid_params)
-    Logger.info('[{}] Finished Grid Search and training.'.format(time.time() - start_time))
+    Logger.info('[{:.4f}s] Finished Grid Search and training.'.format(time.time() - start_time))
 
     # 5. See the CV result
     show_CV_result(reg, adjust_paras=adjust_para_list, classifi_scoring=cv_grid_params.scoring)
@@ -386,11 +389,11 @@ if __name__ == "__main__":
     # 7. Predict and submit
     test_preds = reg.predict(test_df)
     test_preds = np.expm1(test_preds)
-    Logger.info('[{}] Finished predicting test set...'.format(time.time() - start_time))
+    Logger.info('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
     submission = test_df[["test_id"]]
     submission["price"] = test_preds
     submission.to_csv("./csv_out/self_regressor_r2score_{}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
-    Logger.info('[{}] Finished submission...'.format(time.time() - start_time))
+    Logger.info('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
 
 
 

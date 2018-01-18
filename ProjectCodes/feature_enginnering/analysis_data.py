@@ -12,6 +12,8 @@ import logging.config
 import matplotlib.pyplot as plt
 from functools import reduce
 
+import time
+
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
 plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 
@@ -206,6 +208,42 @@ if __name__ == "__main__":
     Logger.info(
         'cat_is_null & brand_is_null & desc_is_null 个数{}, 占比{:.4%}'.
             format((all_df.cat_is_null & all_df.brand_is_null & all_df.desc_is_null).sum(), (all_df.cat_is_null & all_df.brand_is_null & all_df.desc_is_null).sum() / all_df.shape[0]))
+
+    # Test fillna methods accuracy
+    Logger.info('因为填充fillna的方式有很多所以可以进行比较，看看填充之后与原有的差异度怎么样')
+    brand_start_time = time.time()
+    def rm_regex_char(raw_str):
+        raw_str = raw_str.replace('?', "\?")
+        raw_str = raw_str.replace('*', "\*")
+        raw_str = raw_str.replace('.', "\.")
+        raw_str = raw_str.replace('|', "\|")
+        raw_str = raw_str.replace('+', "\+")
+        return raw_str
+    def recover_regex_char(raw_str):
+        raw_str = raw_str.replace('\?', "?")
+        raw_str = raw_str.replace('\*', "*")
+        raw_str = raw_str.replace('\.', ".")
+        raw_str = raw_str.replace('\|', "|")
+        raw_str = raw_str.replace('\+', "+")
+        return raw_str
+    def base_name_fill_brand(rm_regex_brand_known_ordered_list:list, str_name):
+        for brand_rm_regex in rm_regex_brand_known_ordered_list:
+            brand_finder = re.compile(r'\b' + brand_rm_regex + r'\b')  # re.I
+            if brand_finder.search(str_name):
+                return recover_regex_char(brand_rm_regex)
+        else:
+            return 'paulnull'
+    have_band_df = all_df[~all_df['brand_name'].isnull()].copy()
+    brand_known_list = have_band_df['brand_name'].value_counts().index
+    rm_regex_brand_known_list = list(map(rm_regex_char, brand_known_list))
+    have_band_df['new_brand'] = have_band_df['name'].map(lambda x: base_name_fill_brand(rm_regex_brand_known_ordered_list=rm_regex_brand_known_list, str_name=x))
+    real_new_brand_df = have_band_df[have_band_df['new_brand'] != 'paulnull']
+    correct_brand_df = real_new_brand_df[real_new_brand_df['new_brand'] == real_new_brand_df['brand_name']]
+    Logger.info('直接从name中提取brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
+    Logger.info('直接从name中提取brand词: 在{}条有brand的数据中，从name中找到非空的new_brand有{}条，在找到的基础上正确率有{:.3%}'
+                .format(have_band_df.shape[0], real_new_brand_df.shape[0], correct_brand_df.shape[0] / real_new_brand_df.shape[0]))
+    Logger.info('直接从name中提取brand词: 这个方法的特点：1、有很大部分数据brand不在name中；2、找到的情况下有一定的错误概率；3、耗时太长')
+
 
     # 为了更好的定义time steps的长度，看下统计量
     Logger.info('查看name列，item_description列分词后的词长度统计')

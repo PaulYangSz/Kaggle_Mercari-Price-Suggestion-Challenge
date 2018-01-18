@@ -11,6 +11,7 @@ import re
 import logging
 import logging.config
 
+import time
 from keras.preprocessing.sequence import pad_sequences
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
@@ -58,6 +59,15 @@ def rm_regex_char(raw_str):
     return raw_str
 
 
+def recover_regex_char(raw_str):
+    raw_str = raw_str.replace('\?', "?")
+    raw_str = raw_str.replace('\*', "*")
+    raw_str = raw_str.replace('\.', ".")
+    raw_str = raw_str.replace('\|', "|")
+    raw_str = raw_str.replace('\+', "+")
+    return raw_str
+
+
 def split_cat_name(name, str_class):
     sub_array = name.split('/')
     if str_class == 'main':
@@ -102,8 +112,8 @@ def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_dict
         for brand in brand_known_ordered_list:
             # 在数据中，有的品牌名只会出现首个单词，不过看起来不像是大多数，所以索性还是从简单开始处理吧
             # 有的品牌名称和普通单词接近，比如Select，Complete之类，所以尽管有nike这样的小写存在，但是还是先不考虑小写了。
-            brand = rm_regex_char(brand)
-            brand_finder = re.compile(r'\b' + brand + r'\b')  # re.I
+            rm_regex_brand = rm_regex_char(brand)
+            brand_finder = re.compile(r'\b' + rm_regex_brand + r'\b')  # re.I
             if brand_finder.search(name):
                 brand_in_name.append(brand)
         if len(brand_in_name) > 0:
@@ -160,6 +170,21 @@ def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_dict
     else:
         return row_ser['brand_name']
 
+# TODO: 可以尝试加入cat来判断
+def base_name_get_brand(rm_regex_brand_known_ordered_list:list, str_name):
+    """
+    通过前面的数据分析可以看到，name是不为空的，所以首先查看name中是否包含brand信息，找到匹配的brand集合
+    再次使用cat信息来看对应哪个brand最可能在这个cat上 (因为想使用map而不是apply，所以可以考虑接下来再做一次map)
+    """
+    for rm_regex_brand in rm_regex_brand_known_ordered_list:
+        # 在数据中，有的品牌名只会出现首个单词，不过看起来不像是大多数，所以索性还是从简单开始处理吧
+        # 有的品牌名称和普通单词接近，比如Select，Complete之类，所以尽管有nike这样的小写存在，但是还是先不考虑小写了。
+        brand_finder = re.compile(r'\b' + rm_regex_brand + r'\b')  # re.I
+        if brand_finder.search(str_name):
+            return recover_regex_char(rm_regex_brand)
+    else:
+        return 'paulnull'
+
 
 class DataReader():
     def __init__(self, local_flag:bool, cat_fill_type:str, brand_fill_type:str, item_desc_fill_type:str):
@@ -172,8 +197,8 @@ class DataReader():
         self.item_desc_fill_type = item_desc_fill_type
 
         if local_flag:
-            train_df = pd.read_csv("../" + TRAIN_FILE, sep='\t', engine='python')
-            test_df = pd.read_csv("../" + TEST_FILE, sep='\t', engine='python')
+            train_df = pd.read_csv("../" + TRAIN_FILE, sep='\t', engine='python', nrows=1000)
+            test_df = pd.read_csv("../" + TEST_FILE, sep='\t', engine='python', nrows=1000)
         else:
             train_df = pd.read_csv(TRAIN_FILE, sep='\t')
             test_df = pd.read_csv(TEST_FILE, sep='\t')
@@ -198,7 +223,7 @@ class DataReader():
             test_df.loc[:, 'item_description'] = test_df['item_description'].map(lambda x: fill_item_description_null(x, 'paulnull'))
         elif item_desc_fill_type == 'base_name':
             train_df.loc[:, 'item_description'] = train_df[['item_description', 'name']].apply(lambda x: fill_item_description_null(x.iloc[0], x.iloc[1]), axis=1)
-            test_df.loc[:, 'item_description'] = test_df['item_description', 'name'].apply(lambda x: fill_item_description_null(x.iloc[0], x.iloc[1]), axis=1)
+            test_df.loc[:, 'item_description'] = test_df[['item_description', 'name']].apply(lambda x: fill_item_description_null(x.iloc[0], x.iloc[1]), axis=1)
         else:
             print('【错误】：item_desc_fill_type should be: "fill_" or "fill_paulnull" or "base_name"')
 
@@ -216,26 +241,28 @@ class DataReader():
         if brand_fill_type == 'fill_paulnull':
             train_df['brand_name'].fillna(value="paulnull", inplace=True)
             test_df['brand_name'].fillna(value="paulnull", inplace=True)
-        elif brand_fill_type == 'base_other_cols':
+        elif brand_fill_type == 'base_name':
+            base_name_time = time.time()
             all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
-            brand_cat_main_info_df, brand_cat_dict = get_brand_top_cat0_info_df(all_df)
+            # brand_cat_main_info_df, brand_cat_dict = get_brand_top_cat0_info_df(all_df)
             brand_known_list = all_df[~all_df['brand_name'].isnull()]['brand_name'].value_counts().index
-            log = 'brand_name填充前, train中为空的有{}个, test为空的有{}个'.format(train_df['brand_name'].isnull().sum(),
-                                                                     test_df['brand_name'].isnull().sum())
+            rm_regex_brand_known_list = list(map(rm_regex_char, brand_known_list))
+            train_null_brand_idxes = train_df[train_df['brand_name'].isnull()].index
+            test_null_brand_idxes = test_df[test_df['brand_name'].isnull()].index
+            log = '\nbrand_name填充前, train中为空的有{}个, test为空的有{}个'.format(train_null_brand_idxes.size,
+                                                                       test_null_brand_idxes.size)
             record_log(local_flag, log)
-            train_df.loc[:, 'brand_name'] = train_df.apply(lambda row: base_other_cols_get_brand(brand_known_ordered_list=brand_known_list,
-                                                                                                 brand_top_cat0_dict=brand_cat_dict,
-                                                                                                 row_ser=row),
-                                                           axis=1)
-            test_df.loc[:, 'brand_name'] = test_df.apply(lambda row: base_other_cols_get_brand(brand_known_ordered_list=brand_known_list,
-                                                                                               brand_top_cat0_dict=brand_cat_dict,
-                                                                                               row_ser=row),
-                                                         axis=1)
-            log = 'brand_name填充后, train中为空的有{}个, test为空的有{}个'.format((train_df['brand_name']=='paulnull').sum(),
+            train_df.loc[train_null_brand_idxes, 'brand_name'] = train_df['name'].map(lambda name: base_name_get_brand(rm_regex_brand_known_ordered_list=rm_regex_brand_known_list,
+                                                                                                                      str_name=name))
+            test_df.loc[test_null_brand_idxes, 'brand_name'] = test_df['name'].map(lambda name: base_name_get_brand(rm_regex_brand_known_ordered_list=rm_regex_brand_known_list,
+                                                                                                                   str_name=name))
+            log = '\nbrand_name填充后, train中为空的有{}个, test为空的有{}个'.format((train_df['brand_name']=='paulnull').sum(),
                                                                      (test_df['brand_name']=='paulnull').sum())
             record_log(local_flag, log)
+            log = '整个base_name填充brand的过程耗时：{}s'.format(time.time() - base_name_time)
+            record_log(local_flag, log)
         else:
-            print('【错误】：brand_fill_type should be: "fill_paulnull" or "base_other_cols"')
+            print('【错误】：brand_fill_type should be: "fill_paulnull" or "base_name" or "base_NB" or "base_GRU" ')
 
 
 
@@ -261,12 +288,12 @@ class DataReader():
                     if len(cat_classes) < 3:
                         cat_name += "/paulnull" * (3 - len(cat_classes))
                     return cat_name
-            log = 'category_name填充前, train中为空的有{}个, test为空的有{}个'.format(train_df['category_name'].isnull().sum(),
+            log = '\ncategory_name填充前, train中为空的有{}个, test为空的有{}个'.format(train_df['category_name'].isnull().sum(),
                                                                      test_df['category_name'].isnull().sum())
             record_log(local_flag, log)
             train_df.loc[:, 'category_name'] = train_df.apply(lambda row: get_cat_main_by_brand(brand_cat_dict, row))
             test_df.loc[:, 'category_name'] = test_df.apply(lambda row: get_cat_main_by_brand(brand_cat_dict, row))
-            log = 'category_name填充后, train中为空的有{}个, test为空的有{}个'.format((train_df['category_name']=='paulnull/paulnull/paulnull').sum(),
+            log = '\ncategory_name填充后, train中为空的有{}个, test为空的有{}个'.format((train_df['category_name']=='paulnull/paulnull/paulnull').sum(),
                                                                      (test_df['category_name']=='paulnull/paulnull/paulnull').sum())
             record_log(local_flag, log)
         else:
@@ -280,8 +307,8 @@ class DataReader():
             change_df.loc[:, 'cat_name_sub2'] = change_df.category_name.map(lambda x: split_cat_name(x, 'sub2'))
         change_df_split_cat(train_df)
         change_df_split_cat(test_df)
-        record_log(local_flag, "初始化之后train_df的列有{}".format(train_df.columns))
-        record_log(local_flag, "初始化之后test_df的列有{}".format(test_df.columns))
+        record_log(local_flag, "\n初始化之后train_df的列有{}".format(train_df.columns))
+        record_log(local_flag, "\n初始化之后test_df的列有{}".format(test_df.columns))
 
         self.train_df = train_df
         self.test_df = test_df
@@ -316,8 +343,8 @@ class DataReader():
         self.test_df['brand_le'] = le.transform(self.test_df['brand_name'])
         del le, self.train_df['brand_name'], self.test_df['brand_name']
 
-        record_log(self.local_flag, "LabelEncoder之后train_df的列有{}".format(self.train_df.columns))
-        record_log(self.local_flag, "LabelEncoder之后test_df的列有{}".format(self.test_df.columns))
+        record_log(self.local_flag, "\nLabelEncoder之后train_df的列有{}".format(self.train_df.columns))
+        record_log(self.local_flag, "\nLabelEncoder之后test_df的列有{}".format(self.test_df.columns))
 
     def tokenizer_text_col(self):
         """
@@ -338,8 +365,8 @@ class DataReader():
         self.train_df["desc_int_seq"] = tok_raw.texts_to_sequences(self.train_df.item_description.str.lower())
         self.test_df["desc_int_seq"] = tok_raw.texts_to_sequences(self.test_df.item_description.str.lower())
 
-        record_log(self.local_flag, "texts_to_sequences之后train_df的列有{}".format(self.train_df.columns))
-        record_log(self.local_flag, "texts_to_sequences之后test_df的列有{}".format(self.test_df.columns))
+        record_log(self.local_flag, "\ntexts_to_sequences之后train_df的列有{}".format(self.train_df.columns))
+        record_log(self.local_flag, "\ntexts_to_sequences之后test_df的列有{}".format(self.test_df.columns))
 
     def ensure_fixed_value(self):
         self.name_seq_len = 20  # 最长17个词

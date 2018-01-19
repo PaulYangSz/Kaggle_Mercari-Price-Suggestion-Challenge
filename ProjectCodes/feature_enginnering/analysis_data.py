@@ -299,9 +299,9 @@ if __name__ == "__main__":
 
     Logger.info('再看填充【category_name】：')
     def do_col2cat_dict(data_df:pd.DataFrame, key_col:str):
-        group_by_key_to_brandset_ser = data_df['category_name'].groupby(data_df[key_col]).apply(lambda x: set(x.values))
-        only_one_brand_ser = group_by_key_to_brandset_ser[group_by_key_to_brandset_ser.map(len)==1]
-        return only_one_brand_ser.map(lambda x: x.pop()).to_dict()
+        group_by_key_to_catset_ser = data_df['category_name'].groupby(data_df[key_col]).apply(lambda x: set(x.values))
+        only_one_cat_ser = group_by_key_to_catset_ser[group_by_key_to_catset_ser.map(len)==1]
+        return only_one_cat_ser.map(lambda x: x.pop()).to_dict()
 
     def get_cat_by_key(key, map):
         if key in map:

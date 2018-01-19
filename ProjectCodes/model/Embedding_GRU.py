@@ -20,7 +20,7 @@ if platform.system() == 'Windows':
     LOCAL_FLAG = True
 else:
     LOCAL_FLAG = False
-data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='fill_paulnull', item_desc_fill_type='fill_')
+data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='base_name', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
 # data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='base_brand', brand_fill_type='base_name', item_desc_fill_type='base_name')
 # Initial get fillna dataframe
 print(data_reader.train_df.shape)
@@ -95,8 +95,7 @@ def get_model():
     category_main = Input(shape=[1], name="category_main")
     category_sub = Input(shape=[1], name="category_sub")
     category_sub2 = Input(shape=[1], name="category_sub2")
-    category_name = Input(shape=[X_train["category_name"].shape[1]],
-                          name="category_name")
+    # category_name = Input(shape=[X_train["category_name"].shape[1]], name="category_name")
     item_condition = Input(shape=[1], name="item_condition")
     num_vars = Input(shape=[X_train["num_vars"].shape[1]], name="num_vars")
 
@@ -108,7 +107,7 @@ def get_model():
     #  name.shape=[None, MAX_NAME_SEQ], emb_name.shape=[None, MAX_NAME_SEQ, output_dim]
     emb_name = Embedding(input_dim=data_reader.n_text_dict_words, output_dim=emb_size // 3)(name)
     emb_item_desc = Embedding(data_reader.n_text_dict_words, emb_size)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
-    emb_category_name = Embedding(data_reader.n_text_dict_words, emb_size // 3)(category_name)
+    # emb_category_name = Embedding(data_reader.n_text_dict_words, emb_size // 3)(category_name)
     emb_brand = Embedding(data_reader.n_brand, 10)(brand)
     emb_category_main = Embedding(data_reader.n_cat_main, 10)(category_main)
     emb_category_sub = Embedding(data_reader.n_cat_sub, 10)(category_sub)
@@ -117,7 +116,7 @@ def get_model():
 
     # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
     rnn_layer1 = GRU(units=16)(emb_item_desc)  # rnn_layer1.shape=[None, 16]
-    rnn_layer2 = GRU(8)(emb_category_name)
+    # rnn_layer2 = GRU(8)(emb_category_name)
     rnn_layer3 = GRU(8)(emb_name)
 
     # main layer
@@ -128,7 +127,7 @@ def get_model():
                           Flatten()(emb_category_sub2),
                           Flatten()(emb_item_condition),
                           rnn_layer1,
-                          rnn_layer2,
+                          # rnn_layer2,
                           rnn_layer3,
                           num_vars])
     # TODO: 全连接隐单元个数和Dropout因子需要调整
@@ -139,7 +138,7 @@ def get_model():
     output = Dense(1, activation="linear")(main_l)
 
     # model
-    model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, category_name, item_condition, num_vars], outputs=output)
+    model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars], outputs=output)  # , category_name
     # optimizer = optimizers.RMSprop()
     optimizer = optimizers.Adam()
     model.compile(loss="mse",

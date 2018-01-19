@@ -281,8 +281,8 @@ class DataReader():
             brand_start_time = time.time()
             all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
             have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
-            train_brand_null_index = train_df[train_df['brand_name'].isnull()].index
-            test_brand_null_index = test_df[test_df['brand_name'].isnull()].index
+            train_brand_null_index = train_df[train_df['brand_name']=='paulnull'].index
+            test_brand_null_index = test_df[test_df['brand_name']=='paulnull'].index
             key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
             train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
             test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
@@ -293,12 +293,14 @@ class DataReader():
 
             col_key = 'name+cat'
             brand_start_time = time.time()
+            train_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
+            test_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
+            train_df[col_key] = train_df.apply(lambda row: row['name'] + row['category_name'], axis=1)
+            test_df[col_key] = test_df.apply(lambda row: row['name'] + row['category_name'], axis=1)
             all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
-            all_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
-            all_df[col_key] = all_df.apply(lambda row: row['name'] + row['category_name'], axis=1)
             have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
-            train_brand_null_index = train_df[train_df['brand_name'].isnull()].index
-            test_brand_null_index = test_df[test_df['brand_name'].isnull()].index
+            train_brand_null_index = train_df[train_df['brand_name']=='paulnull'].index
+            test_brand_null_index = test_df[test_df['brand_name']=='paulnull'].index
             key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
             train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
             test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
@@ -309,11 +311,12 @@ class DataReader():
 
             col_key = 'desc+cat'
             brand_start_time = time.time()
+            train_df[col_key] = train_df.apply(lambda row: row['item_description'] + row['category_name'], axis=1)
+            test_df[col_key] = test_df.apply(lambda row: row['item_description'] + row['category_name'], axis=1)
             all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
-            all_df[col_key] = all_df.apply(lambda row: row['item_description'] + row['category_name'], axis=1)
             have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
-            train_brand_null_index = train_df[train_df['brand_name'].isnull()].index
-            test_brand_null_index = test_df[test_df['brand_name'].isnull()].index
+            train_brand_null_index = train_df[train_df['brand_name']=='paulnull'].index
+            test_brand_null_index = test_df[test_df['brand_name']=='paulnull'].index
             key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
             train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
             test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
@@ -347,9 +350,9 @@ class DataReader():
 
             col_key = 'name'
             cat_start_time = time.time()
-            have_cat_df = all_df[~all_df['category_name'].isnull()].copy()
-            train_cat_null_index = train_df[train_df['category_name'].isnull()].index
-            test_cat_null_index = test_df[test_df['category_name'].isnull()].index
+            have_cat_df = all_df[all_df['category_name']!='paulnull/paulnull/paulnull'].copy()
+            train_cat_null_index = train_df[train_df['category_name']=='paulnull/paulnull/paulnull'].index
+            test_cat_null_index = test_df[test_df['category_name']=='paulnull/paulnull/paulnull'].index
             key2cat_map = do_col2cat_dict(data_df=have_cat_df, key_col=col_key)
             train_df.loc[train_cat_null_index, 'category_name'] = train_df.loc[train_cat_null_index, col_key].map(lambda x: get_cat_by_key(x, key2cat_map))
             test_df.loc[test_cat_null_index, 'category_name'] = test_df.loc[test_cat_null_index, col_key].map(lambda x: get_cat_by_key(x, key2cat_map))
@@ -498,7 +501,7 @@ class DataReader():
             'category_main': np.array(dataset.cat_main_le),
             'category_sub': np.array(dataset.cat_sub_le),
             'category_sub2': np.array(dataset.cat_sub2_le),
-            'category_name': pad_sequences(dataset.cat_int_seq, maxlen=self.cat_name_seq_len),
+            # 'category_name': pad_sequences(dataset.cat_int_seq, maxlen=self.cat_name_seq_len),
             'item_condition': np.array(dataset.item_condition_id),
             'num_vars': np.array(dataset[['shipping']])
         }

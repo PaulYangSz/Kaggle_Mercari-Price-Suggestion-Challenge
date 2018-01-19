@@ -70,7 +70,7 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
 
     def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, cat_name_emb_dim=20, brand_emb_dim=10,
                  cat_main_emb_dim=10, cat_sub_emb_dim=10, cat_sub2_emb_dim=10, item_cond_id_emb_dim=5,
-                 GRU_layers_out_dim=(8, 16, 8), drop_out_layers=(0.25, 0.1), dense_layers_dim=(128, 64),
+                 GRU_layers_out_dim=(8, 16), drop_out_layers=(0.25, 0.1), dense_layers_dim=(128, 64),
                  epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007):
         self.data_reader = data_reader
         self.name_emb_dim = name_emb_dim
@@ -95,7 +95,7 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
         # Inputs
         name = Input(shape=[reader.name_seq_len], name="name")
         item_desc = Input(shape=[reader.item_desc_seq_len], name="item_desc")
-        category_name = Input(shape=[reader.cat_name_seq_len], name="category_name")
+        # category_name = Input(shape=[reader.cat_name_seq_len], name="category_name")
         item_condition = Input(shape=[1], name="item_condition")
         category_main = Input(shape=[1], name="category_main")
         category_sub = Input(shape=[1], name="category_sub")
@@ -108,7 +108,7 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
         #  name.shape=[None, MAX_NAME_SEQ] -> emb_name.shape=[None, MAX_NAME_SEQ, output_dim]
         emb_name = Embedding(input_dim=reader.n_text_dict_words, output_dim=self.name_emb_dim)(name)
         emb_item_desc = Embedding(reader.n_text_dict_words, self.item_desc_emb_dim)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
-        emb_category_name = Embedding(reader.n_text_dict_words, self.cat_name_emb_dim)(category_name)
+        # emb_category_name = Embedding(reader.n_text_dict_words, self.cat_name_emb_dim)(category_name)
         emb_cond_id = Embedding(reader.n_condition_id, self.item_cond_id_emb_dim)(item_condition)
         emb_cat_main = Embedding(reader.n_cat_main, self.cat_main_emb_dim)(category_main)
         emb_cat_sub = Embedding(reader.n_cat_sub, self.cat_sub_emb_dim)(category_sub)
@@ -118,7 +118,7 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
         # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
         rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0])(emb_name)
         rnn_layer_item_desc = GRU(units=self.GRU_layers_out_dim[1])(emb_item_desc)  # rnn_layer_item_desc.shape=[None, 16]
-        rnn_layer_cat_name = GRU(units=self.GRU_layers_out_dim[2])(emb_category_name)
+        # rnn_layer_cat_name = GRU(units=self.GRU_layers_out_dim[2])(emb_category_name)
 
         # main layer
         # 连接列表中的Tensor，按照axis组成一个大的Tensor
@@ -129,7 +129,7 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
                                   Flatten()(emb_cond_id),
                                   rnn_layer_name,
                                   rnn_layer_item_desc,
-                                  rnn_layer_cat_name,
+                                  # rnn_layer_cat_name,
                                   num_vars])
         # Concat[all] -> Dense1 -> ... -> DenseN
         for i in range(len(self.dense_layers_dim)):
@@ -139,7 +139,7 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
         output = Dense(1, activation="linear")(main_layer)
 
         # model
-        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, category_name, item_condition, num_vars],
+        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars],  # category_name
                       outputs=output)
         # optimizer = optimizers.RMSprop()
         optimizer = optimizers.Adam()
@@ -224,7 +224,7 @@ class CvGridParams(object):
                 'cat_sub_emb_dim': [10],
                 'cat_sub2_emb_dim': [10],
                 'item_cond_id_emb_dim': [5],
-                'GRU_layers_out_dim': [(8, 16, 8)],  # GRU hidden units
+                'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units
                 'drop_out_layers': [(0.25, 0.1)],
                 'dense_layers_dim': [(128, 64)],
                 'epochs': [3],
@@ -340,10 +340,10 @@ if __name__ == "__main__":
     # 1. Get sample and last validation data.
     # Get Data include some pre-process.
     # Initial get fillna dataframe
-    # cat_fill_type= 'fill_paulnull' or 'base_brand'
-    # brand_fill_type= 'fill_paulnull' or 'base_other_cols'
+    # cat_fill_type= "fill_paulnull" or "base_name" or "base_brand"
+    # brand_fill_type= "fill_paulnull" or "base_other_cols" or "base_NB" or "base_GRU"
     # item_desc_fill_type= 'fill_' or 'fill_paulnull' or 'base_name'
-    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='fill_paulnull', item_desc_fill_type='fill_')
+    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='base_name', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
     Logger.info('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
     # PROCESS CATEGORICAL DATA
@@ -404,7 +404,7 @@ if __name__ == "__main__":
     Logger.info('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
     submission = test_df[["test_id"]]
     submission["price"] = test_preds
-    submission.to_csv("./csv_output/self_regressor_r2score_{}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
+    submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
     Logger.info('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
 
 

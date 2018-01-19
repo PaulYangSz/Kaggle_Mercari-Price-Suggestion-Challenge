@@ -225,41 +225,100 @@ if __name__ == "__main__":
 
     # Test fillna methods accuracy
     Logger.info('因为填充fillna的方式有很多所以可以进行比较，看看填充之后与原有的差异度怎么样')
-    brand_start_time = time.time()
-    def rm_regex_char(raw_str):
-        raw_str = raw_str.replace('?', "\?")
-        raw_str = raw_str.replace('*', "\*")
-        raw_str = raw_str.replace('.', "\.")
-        raw_str = raw_str.replace('|', "\|")
-        raw_str = raw_str.replace('+', "\+")
-        return raw_str
-    def recover_regex_char(raw_str):
-        raw_str = raw_str.replace('\?', "?")
-        raw_str = raw_str.replace('\*', "*")
-        raw_str = raw_str.replace('\.', ".")
-        raw_str = raw_str.replace('\|', "|")
-        raw_str = raw_str.replace('\+', "+")
-        return raw_str
-    def base_name_fill_brand(rm_regex_brand_known_ordered_list:list, str_name):
-        for brand_rm_regex in rm_regex_brand_known_ordered_list:
-            brand_finder = re.compile(r'\b' + brand_rm_regex + r'\b')  # re.I
-            if brand_finder.search(str_name):
-                return recover_regex_char(brand_rm_regex)
+    Logger.info('先看填充【brand_name】：')
+
+    def do_col2brand_dict(data_df:pd.DataFrame, key_col:str):
+        group_by_key_to_brandset_ser = data_df['brand_name'].groupby(data_df[key_col]).apply(lambda x: set(x.values))
+        only_one_brand_ser = group_by_key_to_brandset_ser[group_by_key_to_brandset_ser.map(len)==1]
+        return only_one_brand_ser.map(lambda x: x.pop()).to_dict()
+
+    def get_brand_by_key(key, map):
+        if key in map:
+            return map[key]
         else:
             return 'paulnull'
-    have_brand_df = all_df[~all_df['brand_name'].isnull()].copy()
-    brand_known_list = have_brand_df['brand_name'].value_counts().index
-    rm_regex_brand_known_list = list(map(rm_regex_char, brand_known_list))
-    Logger.info('全量数据跑了一晚上都没有跑完，所以只拿{}条数据进行填充展示'.format(10000))
-    have_brand_df_1w = have_brand_df.head(10000).copy()
-    have_brand_df_1w['new_brand'] = have_brand_df_1w['name'].map(lambda x: base_name_fill_brand(rm_regex_brand_known_ordered_list=rm_regex_brand_known_list, str_name=x))
-    real_new_brand_df = have_brand_df_1w[have_brand_df_1w['new_brand'] != 'paulnull']
-    correct_brand_df = real_new_brand_df[real_new_brand_df['new_brand'] == real_new_brand_df['brand_name']]
-    Logger.info('直接从name中提取brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
-    Logger.info('直接从name中提取brand词: 在{}条有brand的数据中，从name中找到非空的new_brand有{}条，在找到的基础上正确率有{:.3%}'
-                .format(have_brand_df_1w.shape[0], real_new_brand_df.shape[0], correct_brand_df.shape[0] / real_new_brand_df.shape[0]))
-    Logger.info('直接从name中提取brand词: 这个方法的特点：1、有很大部分数据brand不在name中；2、找到的情况下有一定的错误概率；3、耗时太长')
 
+    col_key = 'name'
+    brand_start_time = time.time()
+    have_brand_df = all_df[~all_df['brand_name'].isnull()].copy()
+    brand_null_index = all_df[all_df['brand_name'].isnull()].index
+    key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
+    all_df.loc[brand_null_index, 'brand_name'] = all_df.loc[brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
+    n_before = brand_null_index.size
+    n_after = (all_df['brand_name'] == 'paulnull').sum()
+    Logger.info('直接name -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
+    Logger.info('填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
+
+    col_key = 'item_description'
+    brand_start_time = time.time()
+    have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
+    brand_null_index = all_df[all_df['brand_name'] == 'paulnull'].index
+    key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
+    all_df.loc[brand_null_index, 'brand_name'] = all_df.loc[brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
+    n_before = brand_null_index.size
+    n_after = (all_df['brand_name'] == 'paulnull').sum()
+    Logger.info('直接desc -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
+    Logger.info('填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
+
+    col_key = 'name+cat'
+    brand_start_time = time.time()
+    all_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
+    all_df[col_key] = all_df.apply(lambda row: row['name'] + row['category_name'], axis=1)
+    have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
+    brand_null_index = all_df[all_df['brand_name'] == 'paulnull'].index
+    key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
+    all_df.loc[brand_null_index, 'brand_name'] = all_df.loc[brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
+    n_before = brand_null_index.size
+    n_after = (all_df['brand_name'] == 'paulnull').sum()
+    Logger.info('name+cat -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
+    Logger.info('填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
+
+    col_key = 'desc+cat'
+    brand_start_time = time.time()
+    all_df[col_key] = all_df.apply(lambda row: row['item_description'] + row['category_name'], axis=1)
+    have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
+    brand_null_index = all_df[all_df['brand_name'] == 'paulnull'].index
+    key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
+    all_df.loc[brand_null_index, 'brand_name'] = all_df.loc[brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
+    n_before = brand_null_index.size
+    n_after = (all_df['brand_name'] == 'paulnull').sum()
+    Logger.info('desc+cat -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
+    Logger.info('填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
+
+    col_key = 'name+desc'
+    brand_start_time = time.time()
+    all_df[col_key] = all_df.apply(lambda row: row['name'] + row['item_description'], axis=1)
+    have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
+    brand_null_index = all_df[all_df['brand_name'] == 'paulnull'].index
+    key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
+    all_df.loc[brand_null_index, 'brand_name'] = all_df.loc[brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
+    n_before = brand_null_index.size
+    n_after = (all_df['brand_name'] == 'paulnull').sum()
+    Logger.info('name+desc -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
+    Logger.info('填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
+
+    Logger.info('再看填充【category_name】：')
+    def do_col2cat_dict(data_df:pd.DataFrame, key_col:str):
+        group_by_key_to_brandset_ser = data_df['category_name'].groupby(data_df[key_col]).apply(lambda x: set(x.values))
+        only_one_brand_ser = group_by_key_to_brandset_ser[group_by_key_to_brandset_ser.map(len)==1]
+        return only_one_brand_ser.map(lambda x: x.pop()).to_dict()
+
+    def get_cat_by_key(key, map):
+        if key in map:
+            return map[key]
+        else:
+            return 'paulnull/paulnull/paulnull'
+
+    col_key = 'name'
+    cat_start_time = time.time()
+    have_cat_df = all_df[all_df['category_name']!='paulnull/paulnull/paulnull'].copy()
+    cat_null_index = all_df[all_df['category_name']=='paulnull/paulnull/paulnull'].index
+    key2cat_map = do_col2cat_dict(data_df=have_cat_df, key_col=col_key)
+    all_df.loc[cat_null_index, 'category_name'] = all_df.loc[cat_null_index, col_key].map(lambda x: get_cat_by_key(x, key2cat_map))
+    n_before = cat_null_index.size
+    n_after = (all_df['category_name'] == 'paulnull/paulnull/paulnull').sum()
+    Logger.info('直接name -> cat词, 耗时 {:.3f}s'.format(time.time() - cat_start_time))
+    Logger.info('填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的cat'.format(n_before, n_after, n_before - n_after))
 
     # 为了更好的定义time steps的长度，看下统计量
     Logger.info('查看name列，item_description列分词后的词长度统计')

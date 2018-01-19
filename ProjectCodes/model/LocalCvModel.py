@@ -270,6 +270,17 @@ def train_model_with_gridsearch(regress_model:LocalRegressor, sample_df, cv_grid
     return reg
 
 
+def get_cv_result_df(cv_results_:dict, adjust_paras:list, n_cv):
+    cols = ['mean_test_score', 'mean_train_score', 'mean_fit_time']
+    for param_ in adjust_paras:
+        cols.append('param_{}'.format(param_))
+    for i in range(n_cv):
+        cols.append('split{}_test_score'.format(i))
+    for i in range(n_cv):
+        cols.append('split{}_train_score'.format(i))
+    return pd.DataFrame(data={key: cv_results_[key] for key in cols}, columns=cols)
+
+
 def show_CV_result(reg:GridSearchCV, adjust_paras, classifi_scoring):
     # pprint(reg.cv_results_)
     Logger.info('XXXXX查看CV的结果XXXXXX')
@@ -277,18 +288,21 @@ def show_CV_result(reg:GridSearchCV, adjust_paras, classifi_scoring):
         '{}: MAX of mean_test_score = {}'.format(classifi_scoring, reg.cv_results_.get('mean_test_score').max()))
     Logger.info(
         '{}: MAX of mean_train_score = {}'.format(classifi_scoring, reg.cv_results_.get('mean_train_score').max()))
+    cv_result_df = get_cv_result_df(reg.cv_results_, adjust_paras, reg.cv.n_splits)
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
+        Logger.info('\n对各组调参参数的交叉训练验证细节为：\n{}'.format(cv_result_df))
     if len(adjust_paras) == 1 and platform.system() == 'Windows':
         every_para_score = pd.Series()
         every_para_score.name = adjust_paras[0]
     for i in range(len(reg.cv_results_.get('mean_test_score'))):
-        Logger.info('+++++++++++')
-        Logger.info('mean_test_score = {}'.format(reg.cv_results_.get('mean_test_score')[i]))
-        Logger.info('mean_train_score = {}'.format(reg.cv_results_.get('mean_train_score')[i]))
+        # Logger.info('+++++++++++')
+        # Logger.info('mean_test_score = {}'.format(reg.cv_results_.get('mean_test_score')[i]))
+        # Logger.info('mean_train_score = {}'.format(reg.cv_results_.get('mean_train_score')[i]))
         param_str = "{"
         for k in adjust_paras:
             param_str += "'{}': {}, ".format(k, reg.cv_results_.get('params')[i][k])
         param_str = param_str[:-2] + "}"
-        Logger.info('params = {}'.format(param_str))
+        # Logger.info('params = {}'.format(param_str))
         if len(adjust_paras) == 1 and platform.system() == 'Windows':
             record_param_value = reg.cv_results_.get('params')[i].get(adjust_paras[0])
             if isinstance(record_param_value, tuple):
@@ -329,7 +343,7 @@ if __name__ == "__main__":
     # cat_fill_type= 'fill_paulnull' or 'base_brand'
     # brand_fill_type= 'fill_paulnull' or 'base_other_cols'
     # item_desc_fill_type= 'fill_' or 'fill_paulnull' or 'base_name'
-    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
+    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='fill_paulnull', item_desc_fill_type='fill_')
     Logger.info('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
     # PROCESS CATEGORICAL DATA
@@ -390,7 +404,7 @@ if __name__ == "__main__":
     Logger.info('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
     submission = test_df[["test_id"]]
     submission["price"] = test_preds
-    submission.to_csv("./csv_out/self_regressor_r2score_{}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
+    submission.to_csv("./csv_output/self_regressor_r2score_{}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
     Logger.info('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
 
 

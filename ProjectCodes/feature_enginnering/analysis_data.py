@@ -11,6 +11,7 @@ import logging
 import logging.config
 import matplotlib.pyplot as plt
 from functools import reduce
+import re
 
 import time
 
@@ -164,7 +165,6 @@ if __name__ == "__main__":
     Logger.info('数据中还有很多类似"No description yet"或者"No description"的数据')
     Logger.info('比如含“No description”的有: {}'.format((all_df.item_description.map(lambda x: have_substr(x, 'No description'))).sum()))
     Logger.info('不过其中也不是包含这种字符串的商品描述都是无效的，需要自定义函数来详细处理下')
-    import re
 
     def filt_item_description_isnull(str_desc):
         if pd.isnull(str_desc):
@@ -233,15 +233,17 @@ if __name__ == "__main__":
                 return recover_regex_char(brand_rm_regex)
         else:
             return 'paulnull'
-    have_band_df = all_df[~all_df['brand_name'].isnull()].copy()
-    brand_known_list = have_band_df['brand_name'].value_counts().index
+    have_brand_df = all_df[~all_df['brand_name'].isnull()].copy()
+    brand_known_list = have_brand_df['brand_name'].value_counts().index
     rm_regex_brand_known_list = list(map(rm_regex_char, brand_known_list))
-    have_band_df['new_brand'] = have_band_df['name'].map(lambda x: base_name_fill_brand(rm_regex_brand_known_ordered_list=rm_regex_brand_known_list, str_name=x))
-    real_new_brand_df = have_band_df[have_band_df['new_brand'] != 'paulnull']
+    Logger.info('全量数据跑了一晚上都没有跑完，所以只拿{}条数据进行填充展示'.format(10000))
+    have_brand_df_1w = have_brand_df.head(10000).copy()
+    have_brand_df_1w['new_brand'] = have_brand_df_1w['name'].map(lambda x: base_name_fill_brand(rm_regex_brand_known_ordered_list=rm_regex_brand_known_list, str_name=x))
+    real_new_brand_df = have_brand_df_1w[have_brand_df_1w['new_brand'] != 'paulnull']
     correct_brand_df = real_new_brand_df[real_new_brand_df['new_brand'] == real_new_brand_df['brand_name']]
     Logger.info('直接从name中提取brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
     Logger.info('直接从name中提取brand词: 在{}条有brand的数据中，从name中找到非空的new_brand有{}条，在找到的基础上正确率有{:.3%}'
-                .format(have_band_df.shape[0], real_new_brand_df.shape[0], correct_brand_df.shape[0] / real_new_brand_df.shape[0]))
+                .format(have_brand_df_1w.shape[0], real_new_brand_df.shape[0], correct_brand_df.shape[0] / real_new_brand_df.shape[0]))
     Logger.info('直接从name中提取brand词: 这个方法的特点：1、有很大部分数据brand不在name中；2、找到的情况下有一定的错误概率；3、耗时太长')
 
 

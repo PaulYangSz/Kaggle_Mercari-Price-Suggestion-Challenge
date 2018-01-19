@@ -61,6 +61,20 @@ if __name__ == "__main__":
         Logger.info('\n====看下DataFrame的数值列的描述信息：（其中有价值的只有price）\n{}'.format(all_df.describe()))
         Logger.info('\n====看下DataFrame的列值为空的情况：（其中test组进来的部分是没有price列的）\n{}'.format(all_df.isnull().any()))
 
+    Logger.info('》》》先做数据清洗，判断各个列的取值是否有异常')
+    Logger.info('除了price列之外，其他的取值都在正常范围内，包括cat的主类别也是和官网一致的')
+    Logger.info('\n分析Price列有为0的情况存在（除了0之外最小值是3），看了下==0的数据的item_condition_id/shipping/brand_name/category_name列取值，'
+                '发现范围比较均衡，不像是某一特殊物品本来售价就是0，所以判定要剔除。')
+    Logger.info('另外分析了一下价格比较高的商品，发现比较正常是珠宝奢侈品')
+    Logger.info('剔除Price==0前train的shape={}'.format(train_df.shape))
+    train_df = train_df[train_df['price'] != 0]
+    Logger.info('剔除Price==0后train的shape={}'.format(train_df.shape))
+    Logger.info('另外发现有name完全相等的item存在，进而发现除了train_id外其他内容也相同，所以考虑drop掉')
+    train_df_no_id = train_df.drop("train_id", axis=1)
+    train_df_no_id = train_df_no_id.drop_duplicates()
+    train_df = train_df.loc[train_df_no_id.index]
+    all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
+
     Logger.info("》》》》开始分析各个列的内容特点")
 
     Logger.info("【Price列】：（只存在train的DataFrame）")

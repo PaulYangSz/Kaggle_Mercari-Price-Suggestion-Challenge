@@ -206,6 +206,12 @@ class DataReader():
             train_df = pd.read_csv(TRAIN_FILE, sep='\t')
             test_df = pd.read_csv(TEST_FILE, sep='\t')
 
+        record_log(local_flag, 'Remain price!=0 items')
+        train_df = train_df[train_df['price'] != 0]
+        record_log(local_flag, 'drop_duplicates()')
+        train_df_no_id = train_df.drop("train_id", axis=1)
+        train_df_no_id = train_df_no_id.drop_duplicates()
+        train_df = train_df.loc[train_df_no_id.index]
 
 
         def fill_item_description_null(str_desc, replace):

@@ -11,12 +11,13 @@ import numpy as np
 import time
 
 from functools import reduce
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Ridge
 from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, median_absolute_error
 from sklearn.metrics import r2_score
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import train_test_split
 from sklearn.utils.estimator_checks import check_estimator
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from keras.layers import Input, Dropout, Dense, BatchNormalization, \
@@ -27,6 +28,7 @@ from keras import backend as K
 from keras import optimizers
 import logging
 import logging.config
+import lightgbm as lgb
 
 if platform.system() == 'Windows':
     LOCAL_FLAG = True
@@ -53,7 +55,7 @@ if 'Logger' not in dir():
     Logger = start_logging()
 
 
-class LocalRegressor(BaseEstimator, RegressorMixin):
+class SelfLocalRegressor(BaseEstimator, RegressorMixin):
     """ An sklearn-API regressor.
     Model 1: Embedding GRU ---- Embedding(text or cat) -> Concat[GRU(words) or Flatten(cat_vector)] ->  Dense -> Output
     Parameters
@@ -90,6 +92,10 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
         self.batch_size = batch_size
         self.lr_init = lr_init
         self.lr_final = lr_final
+
+        self.ridge_lgm_models_list = self.get_ridge_lgm_models()
+
+        self.stack_last_model = Ridge(alpha=.6, copy_X=True, fit_intercept=False, max_iter=100, random_state=101, solver='auto', tol=0.01)
 
     def get_GRU_model(self, reader:DataReader):
         # Inputs
@@ -146,6 +152,14 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
         model.compile(loss="mse", optimizer=optimizer)
         return model
 
+    def get_ridge_lgm_models(self):
+        ridge1 = Ridge(alpha=.6, copy_X=True, fit_intercept=True, max_iter=100, normalize=False, random_state=101, solver='auto', tol=0.01)
+        ridge2 = Ridge(solver='sag', fit_intercept=True)
+        lgb1 = None
+        lgb2 = None
+        return [ridge1, ridge2, lgb1, lgb2]
+
+
     def fit(self, X, y):
         """A reference implementation of a fitting function for a regressor.
         Parameters
@@ -178,10 +192,51 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
         K.set_value(self.emb_GRU_model.optimizer.decay, lr_decay)
 
         # print('~~~~~~~~~~~~In fit() type(X): {}'.format(type(X)))
-        keras_X = self.data_reader.get_keras_data(X)
+        keras_X = self.data_reader.get_keras_dict_data(X)
         history = self.emb_GRU_model.fit(keras_X, y, epochs=self.epochs, batch_size=self.batch_size, validation_split=0., # 0.01
                                          # callbacks=[TensorBoard('./logs/'+log_subdir)],
                                          verbose=10)
+
+        sparse_X = self.data_reader.get_ridge_sparse_data(X)
+        self.ridge_lgm_models_list[0].fit(sparse_X, y)
+        self.ridge_lgm_models_list[1].fit(sparse_X, y)
+        params = {
+            'learning_rate': 0.65,
+            'application': 'regression',
+            'max_depth': 3,
+            'num_leaves': 60,
+            'verbosity': -1,
+            'metric': 'RMSE',
+            'data_random_seed': 1,
+            'bagging_fraction': 0.5,
+            'nthread': 4
+        }
+
+        params2 = {
+            'learning_rate': 0.85,
+            'application': 'regression',
+            'max_depth': 3,
+            'num_leaves': 130,
+            'verbosity': -1,
+            'metric': 'RMSE',
+            'data_random_seed': 2,
+            'bagging_fraction': 1,
+            'nthread': 4
+        }
+        d_train = lgb.Dataset(sparse_X, label=y)
+        self.ridge_lgm_models_list[2] = lgb.train(params, train_set=d_train, num_boost_round=7500, valid_sets=d_train, verbose_eval=1000)
+        self.ridge_lgm_models_list[3] = lgb.train(params2, train_set=d_train, num_boost_round=6000, valid_sets=d_train, verbose_eval=500)
+
+        # For stacking
+        gru_y = self.emb_GRU_model.predict(keras_X)
+        ridge1_y = self.ridge_lgm_models_list[0].predict(sparse_X)
+        ridge2_y = self.ridge_lgm_models_list[1].predict(sparse_X)
+        lgb1_y = self.ridge_lgm_models_list[2].predict(sparse_X)
+        lgb2_y = self.ridge_lgm_models_list[3].predict(sparse_X)
+        second_last_df = pd.DataFrame(data={'gru_y':gru_y, 'ridge1_y':ridge1_y, 'ridge2_y':ridge2_y, 'lgb1_y':lgb1_y, 'lgb2_y':lgb2_y},
+                                      columns=['gru_y', 'ridge1_y', 'ridge2_y', 'lgb1_y', 'lgb2_y'])
+        self.stack_last_model.fit(second_last_df, y)
+        Logger.info("In this fold train get stack_last_model's coefficients: {}".format(self.stack_last_model.coef_))
 
         # Return the regressor
         return self
@@ -204,8 +259,18 @@ class LocalRegressor(BaseEstimator, RegressorMixin):
         # Input validation
         # X = check_array(X)  # ValueError: setting an array element with a sequence. This is caused by "XXX_seq"
 
-        keras_X = self.data_reader.get_keras_data(X)
-        return self.emb_GRU_model.predict(keras_X, batch_size=self.batch_size)
+        keras_X = self.data_reader.get_keras_dict_data(X)
+        gru_y = self.emb_GRU_model.predict(keras_X, batch_size=self.batch_size)
+
+        sparse_X = self.data_reader.get_ridge_sparse_data(X)
+        ridge1_y = self.ridge_lgm_models_list[0].predict(sparse_X)
+        ridge2_y = self.ridge_lgm_models_list[1].predict(sparse_X)
+        lgb1_y = self.ridge_lgm_models_list[2].predict(sparse_X)
+        lgb2_y = self.ridge_lgm_models_list[3].predict(sparse_X)
+
+        second_last_df = pd.DataFrame(data={'gru_y': gru_y, 'ridge1_y': ridge1_y, 'ridge2_y': ridge2_y, 'lgb1_y': lgb1_y, 'lgb2_y': lgb2_y},
+                                      columns=['gru_y', 'ridge1_y', 'ridge2_y', 'lgb1_y', 'lgb2_y'])
+        return self.stack_last_model.predict(second_last_df)
 
 
 class CvGridParams(object):
@@ -216,8 +281,8 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'name_emb_dim': [20],  # In name each word's vector length
-                'item_desc_emb_dim': [60],
+                'name_emb_dim': [15],  # In name each word's vector length
+                'item_desc_emb_dim': [70],
                 'cat_name_emb_dim': [20],
                 'brand_emb_dim': [10],
                 'cat_main_emb_dim': [10],
@@ -226,8 +291,8 @@ class CvGridParams(object):
                 'item_cond_id_emb_dim': [5],
                 'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units
                 'drop_out_layers': [(0.25, 0.1)],
-                'dense_layers_dim': [(128, 64)],
-                'epochs': [3],
+                'dense_layers_dim': [(512, 64)],
+                'epochs': [2],
                 'batch_size': [512*3],
                 'lr_init': [0.015],
                 'lr_final': [0.007],
@@ -251,9 +316,9 @@ def print_param(cv_grid_params:CvGridParams):
     return search_param_list
 
 
-def train_model_with_gridsearch(regress_model:LocalRegressor, sample_df, cv_grid_params):
+def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_grid_params):
     sample_X = sample_df.drop('target', axis=1)
-    sample_X = sample_X[['name_int_seq', 'desc_int_seq', 'brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'cat_int_seq', 'item_condition_id', 'shipping']]
+    # sample_X = sample_X[['name_int_seq', 'desc_int_seq', 'brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']]  # , 'cat_int_seq'
     sample_y = sample_df['target']
 
     # Check the list of available parameters with `estimator.get_params().keys()`
@@ -346,6 +411,8 @@ if __name__ == "__main__":
     data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='base_name', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
     Logger.info('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
+    data_reader.del_redundant_cols()
+
     # PROCESS CATEGORICAL DATA
     Logger.info("Handling categorical variables...")
     data_reader.le_encode()
@@ -373,6 +440,11 @@ if __name__ == "__main__":
     print(sample_df.shape)
     print(last_valida_df.shape)
 
+    data_reader.del_redundant_cols()
+
+    # Begin prepare ridge&lgb data input
+    data_reader.train_ridge_numpy_data_condition()
+
     # 2. Check self-made estimator
     # check_estimator(LocalRegressor)  # Can not pass because need default DataReader in __init__.
 
@@ -381,7 +453,7 @@ if __name__ == "__main__":
     adjust_para_list = print_param(cv_grid_params)
 
     # 4. Use GridSearchCV to tuning model.
-    regress_model = LocalRegressor(data_reader=data_reader)
+    regress_model = SelfLocalRegressor(data_reader=data_reader)
     print('Begin to train self-defined sklearn-API regressor.')
     reg = train_model_with_gridsearch(regress_model, sample_df, cv_grid_params)
     Logger.info('[{:.4f}s] Finished Grid Search and training.'.format(time.time() - start_time))

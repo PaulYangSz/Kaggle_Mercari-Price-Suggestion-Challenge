@@ -4,7 +4,7 @@
 """
 Read data and do some pre-process.
 """
-
+import gc
 import pandas as pd
 import numpy as np
 import re
@@ -13,7 +13,10 @@ import logging.config
 import platform
 
 import time
+from scipy.sparse import csr_matrix, hstack
 from keras.preprocessing.sequence import pad_sequences
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.preprocessing import LabelBinarizer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from keras.preprocessing.text import Tokenizer
@@ -190,6 +193,13 @@ def base_name_get_brand(rm_regex_brand_known_ordered_list:list, str_name):
 
 
 class DataReader():
+    name_cv = None
+    cat_main_cv = None
+    cat_sub_cv = None
+    cat_sub2_cv = None
+    desc_tv = None
+    brand_lb = None
+
     def __init__(self, local_flag:bool, cat_fill_type:str, brand_fill_type:str, item_desc_fill_type:str):
         record_log(local_flag, '\n构建数据DF时使用的参数：\n'
                     'local_flag={}, cat_fill_type={}, brand_fill_type={}, item_desc_fill_type={}'
@@ -431,7 +441,7 @@ class DataReader():
         le.fit(np.hstack([self.train_df['brand_name'], self.test_df['brand_name']]))
         self.train_df['brand_le'] = le.transform(self.train_df['brand_name'])
         self.test_df['brand_le'] = le.transform(self.test_df['brand_name'])
-        del le, self.train_df['brand_name'], self.test_df['brand_name']
+        # del le, self.train_df['brand_name'], self.test_df['brand_name']
 
         record_log(self.local_flag, "\nLabelEncoder之后train_df的列有{}".format(self.train_df.columns))
         record_log(self.local_flag, "\nLabelEncoder之后test_df的列有{}".format(self.test_df.columns))
@@ -442,14 +452,13 @@ class DataReader():
         """
         tok_raw = Tokenizer()  # 分割文本成词，然后将词转成编码(先分词，后编码, 编码从1开始)
         # 这里构成raw文本的时候没有加入test数据是因为就算test中有新出现的词也不会在后续训练中改变词向量
-        raw_text = np.hstack([self.train_df['category_name'].str.lower(),
-                              self.train_df['item_description'].str.lower(),
+        raw_text = np.hstack([self.train_df['item_description'].str.lower(),
                               self.train_df['name'].str.lower()])
         tok_raw.fit_on_texts(raw_text)
         self.n_text_dict_words = max(tok_raw.word_index.values()) + 2
 
-        self.train_df["cat_int_seq"] = tok_raw.texts_to_sequences(self.train_df.category_name.str.lower())
-        self.test_df["cat_int_seq"] = tok_raw.texts_to_sequences(self.test_df.category_name.str.lower())
+        # self.train_df["cat_int_seq"] = tok_raw.texts_to_sequences(self.train_df.category_name.str.lower())
+        # self.test_df["cat_int_seq"] = tok_raw.texts_to_sequences(self.test_df.category_name.str.lower())
         self.train_df["name_int_seq"] = tok_raw.texts_to_sequences(self.train_df.name.str.lower())
         self.test_df["name_int_seq"] = tok_raw.texts_to_sequences(self.test_df.name.str.lower())
         self.train_df["desc_int_seq"] = tok_raw.texts_to_sequences(self.train_df.item_description.str.lower())
@@ -465,8 +474,8 @@ class DataReader():
         if self.n_text_dict_words == 0:
             self.n_text_dict_words = np.max([self.train_df.name_int_seq.map(max).max(),
                                              self.test_df.name_int_seq.map(max).max(),
-                                             self.train_df.cat_int_seq.map(max).max(),
-                                             self.test_df.cat_int_seq.map(max).max(),
+                                             # self.train_df.cat_int_seq.map(max).max(),
+                                             # self.test_df.cat_int_seq.map(max).max(),
                                              self.train_df.desc_int_seq.map(max).max(),
                                              self.test_df.desc_int_seq.map(max).max()]) + 2
         self.n_cat_main = np.max([self.train_df.cat_main_le.max(), self.test_df.cat_main_le.max()]) + 1  # LE编码后最大值+1
@@ -485,7 +494,7 @@ class DataReader():
         record_log(self.local_flag, "train_test_split: sample={}, validation={}".format(dsample.shape, dvalid.shape))
         return dsample, dvalid, self.test_df
 
-    def get_keras_data(self, dataset):
+    def get_keras_dict_data(self, dataset):
         """
         KERAS DATA DEFINITION
         name:名字词编号pad列表, item_desc:描述词编号pad列表,
@@ -507,7 +516,82 @@ class DataReader():
         }
         return X
 
+    def del_redundant_cols(self):
+        useful_cols = ['train_id', 'test_id', 'name', 'item_condition_id', 'brand_name', 'price', 'shipping', 'item_description',
+                       'cat_name_main', 'cat_name_sub', 'cat_name_sub2', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le',
+                       'brand_le', 'name_int_seq', 'desc_int_seq']
+        for col in self.train_df.columns:
+            if col not in useful_cols:
+                del self.train_df[col]
+        for col in self.test_df.columns:
+            if col not in useful_cols:
+                del self.test_df[col]
+        gc.collect()
 
+    def train_ridge_numpy_data_condition(self):
+        """
+        无法和Keras的数据在一个模型里共存，因为这里需要用稀疏矩阵存储，而且大家对原始特征数据的处理方式也有不同
+        :return:
+        """
+        NUM_BRANDS = 4500
+        NUM_CATEGORIES = 1000
+        NAME_MIN_DF = 10
+        MAX_FEATURES_ITEM_DESCRIPTION = 90000
+
+        merge_df = pd.concat([self.train_df, self.test_df]).reset_index(drop=True).loc[:, self.train_df.columns[1:]]
+
+        def cutting(merge_set, train_set, test_set):
+            pop_brand = merge_set['brand_name'].value_counts().loc[lambda x: x.index != 'paulnull'].index[:NUM_BRANDS]
+            train_set.loc[~train_set['brand_name'].isin(pop_brand), 'brand_name'] = 'paulnull'
+            test_set.loc[~test_set['brand_name'].isin(pop_brand), 'brand_name'] = 'paulnull'
+            pop_category1 = merge_set['cat_name_main'].value_counts().loc[lambda x: x.index != 'paulnull'].index[:NUM_CATEGORIES]
+            pop_category2 = merge_set['cat_name_sub'].value_counts().loc[lambda x: x.index != 'paulnull'].index[:NUM_CATEGORIES]
+            pop_category3 = merge_set['cat_name_sub2'].value_counts().loc[lambda x: x.index != 'paulnull'].index[:NUM_CATEGORIES]
+            train_set.loc[~train_set['cat_name_main'].isin(pop_category1), 'cat_name_main'] = 'paulnull'
+            test_set.loc[~test_set['cat_name_main'].isin(pop_category1), 'cat_name_main'] = 'paulnull'
+            train_set.loc[~train_set['cat_name_sub'].isin(pop_category2), 'cat_name_sub'] = 'paulnull'
+            test_set.loc[~test_set['cat_name_sub'].isin(pop_category2), 'cat_name_sub'] = 'paulnull'
+            train_set.loc[~train_set['cat_name_sub2'].isin(pop_category3), 'cat_name_sub2'] = 'paulnull'
+            test_set.loc[~test_set['cat_name_sub2'].isin(pop_category3), 'cat_name_sub2'] = 'paulnull'
+        cutting(merge_df, self.train_df, self.test_df)
+
+        def to_categorical(dataset):
+            dataset['cat_name_main'] = dataset['cat_name_main'].astype('category')
+            dataset['cat_name_sub'] = dataset['cat_name_sub'].astype('category')
+            dataset['cat_name_sub2'] = dataset['cat_name_sub2'].astype('category')
+            dataset['item_condition_id'] = dataset['item_condition_id'].astype('category')
+        to_categorical(self.train_df)
+        to_categorical(self.test_df)
+        merge_df = pd.concat([self.train_df, self.test_df]).reset_index(drop=True).loc[:, self.train_df.columns[1:]]
+
+        self.name_cv = CountVectorizer(min_df=NAME_MIN_DF, ngram_range=(1, 2), stop_words='english')
+        self.name_cv.fit(merge_df['name'])
+
+        self.cat_main_cv = CountVectorizer()
+        self.cat_main_cv.fit(merge_df['cat_name_main'])
+        self.cat_sub_cv = CountVectorizer()
+        self.cat_sub_cv.fit(merge_df['cat_name_sub'])
+        self.cat_sub2_cv = CountVectorizer()
+        self.cat_sub2_cv.fit(merge_df['cat_name_sub2'])
+
+        self.desc_tv = TfidfVectorizer(max_features=MAX_FEATURES_ITEM_DESCRIPTION,
+                                       ngram_range=(1, 2),
+                                       stop_words='english')
+        self.desc_tv.fit(merge_df['item_description'])
+
+        self.brand_lb = LabelBinarizer(sparse_output=True)
+        self.brand_lb.fit(merge_df['brand_name'])
+
+    def get_ridge_sparse_data(self, dataset):
+        X_name = self.name_cv.transform(dataset['name'])
+        X_category1 = self.cat_main_cv.transform(dataset['cat_name_main'])
+        X_category2 = self.cat_sub_cv.transform(dataset['cat_name_sub'])
+        X_category3 = self.cat_sub2_cv.transform(dataset['cat_name_sub2'])
+        X_description = self.desc_tv.transform(dataset['item_description'])
+        X_brand = self.brand_lb.transform(dataset['brand_name'])
+        X_dummies = csr_matrix(pd.get_dummies(dataset[['item_condition_id', 'shipping']], sparse=True).values)
+        print(X_dummies.shape, X_description.shape, X_brand.shape, X_category1.shape, X_category2.shape, X_category3.shape, X_name.shape)
+        return hstack((X_dummies, X_description, X_brand, X_category1, X_category2, X_category3, X_name)).tocsr()
 
 
 

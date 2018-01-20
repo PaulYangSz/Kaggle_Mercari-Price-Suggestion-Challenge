@@ -60,9 +60,9 @@ print(dvalid.shape)
 
 
 # KERAS DATA DEFINITION
-X_train = data_reader.get_keras_data(dtrain)
-X_valid = data_reader.get_keras_data(dvalid)
-X_test = data_reader.get_keras_data(test)
+X_train = data_reader.get_keras_dict_data(dtrain)
+X_valid = data_reader.get_keras_dict_data(dvalid)
+X_test = data_reader.get_keras_dict_data(test)
 print('[{}] Finished DATA PREPARATION...'.format(time.time() - start_time))
 
 

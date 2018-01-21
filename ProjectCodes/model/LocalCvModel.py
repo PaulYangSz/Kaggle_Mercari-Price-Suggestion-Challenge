@@ -198,6 +198,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
                                          verbose=10)
 
         sparse_X = self.data_reader.get_ridge_sparse_data(X)
+        print('sparse_X.shape={}'.format(sparse_X.shape))
         self.ridge_lgm_models_list[0].fit(sparse_X, y)
         self.ridge_lgm_models_list[1].fit(sparse_X, y)
         params = {
@@ -229,6 +230,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
 
         # For stacking
         gru_y = self.emb_GRU_model.predict(keras_X)
+        gru_y = gru_y.reshape(gru_y.shape[0])
         ridge1_y = self.ridge_lgm_models_list[0].predict(sparse_X)
         ridge2_y = self.ridge_lgm_models_list[1].predict(sparse_X)
         lgb1_y = self.ridge_lgm_models_list[2].predict(sparse_X)
@@ -261,8 +263,10 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
 
         keras_X = self.data_reader.get_keras_dict_data(X)
         gru_y = self.emb_GRU_model.predict(keras_X, batch_size=self.batch_size)
+        gru_y = gru_y.reshape(gru_y.shape[0])
 
         sparse_X = self.data_reader.get_ridge_sparse_data(X)
+        print('sparse_X.shape={}'.format(sparse_X.shape))
         ridge1_y = self.ridge_lgm_models_list[0].predict(sparse_X)
         ridge2_y = self.ridge_lgm_models_list[1].predict(sparse_X)
         lgb1_y = self.ridge_lgm_models_list[2].predict(sparse_X)
@@ -435,15 +439,15 @@ if __name__ == "__main__":
     data_reader.ensure_fixed_value()
     Logger.info('[{:.4f}s] Finished EMBEDDINGS MAX VALUE...'.format(time.time() - start_time))
 
-    # EXTRACT DEVELOPMENT TEST
-    sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
-    print(sample_df.shape)
-    print(last_valida_df.shape)
-
     data_reader.del_redundant_cols()
 
     # Begin prepare ridge&lgb data input
     data_reader.train_ridge_numpy_data_condition()
+
+    # EXTRACT DEVELOPMENT TEST
+    sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
+    print(sample_df.shape)
+    print(last_valida_df.shape)
 
     # 2. Check self-made estimator
     # check_estimator(LocalRegressor)  # Can not pass because need default DataReader in __init__.

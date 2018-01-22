@@ -40,6 +40,7 @@ else:
     LOCAL_FLAG = False
 
 from ProjectCodes.model.DataReader import DataReader
+from ProjectCodes.model.DataReader import record_log
 
 
 def start_logging():
@@ -53,6 +54,8 @@ def start_logging():
     return logger
 if 'Logger' not in dir():
     Logger = start_logging()
+
+RECORD_LOG = lambda log_str: record_log(LOCAL_FLAG, log_str)
 
 
 class SelfLocalRegressor(BaseEstimator, RegressorMixin):
@@ -238,7 +241,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         second_last_df = pd.DataFrame(data={'gru_y':gru_y, 'ridge1_y':ridge1_y, 'ridge2_y':ridge2_y, 'lgb1_y':lgb1_y, 'lgb2_y':lgb2_y},
                                       columns=['gru_y', 'ridge1_y', 'ridge2_y', 'lgb1_y', 'lgb2_y'])
         self.stack_last_model.fit(second_last_df, y)
-        Logger.info("In this fold train get stack_last_model's coefficients: {}".format(self.stack_last_model.coef_))
+        RECORD_LOG("In this fold train get stack_last_model's coefficients: {}".format(self.stack_last_model.coef_))
 
         # Return the regressor
         return self
@@ -304,19 +307,23 @@ class CvGridParams(object):
         else:
             print("Construct CvGridParams with error param_type: " + param_type)
 
+    def rm_list_dict_params(self):
+        for key in self.all_params.keys():
+            self.all_params[key] = self.all_params.get(key)[0]
+
 
 def print_param(cv_grid_params:CvGridParams):
-    Logger.info('选取的模型参数为：')
-    Logger.info("param_name = '{}'".format(cv_grid_params.name))
-    Logger.info("regression loss = {}".format(cv_grid_params.scoring))
-    Logger.info("rand_state = {}".format(cv_grid_params.rand_state))
-    Logger.info("param_dict = {")
+    RECORD_LOG('选取的模型参数为：')
+    RECORD_LOG("param_name = '{}'".format(cv_grid_params.name))
+    RECORD_LOG("regression loss = {}".format(cv_grid_params.scoring))
+    RECORD_LOG("rand_state = {}".format(cv_grid_params.rand_state))
+    RECORD_LOG("param_dict = {")
     search_param_list = []
     for k, v in cv_grid_params.all_params.items():
-        Logger.info("\t'{}' = {}".format(k, v))
+        RECORD_LOG("\t'{}' = {}".format(k, v))
         if len(v) > 1:
             search_param_list.append(k)
-    Logger.info("}")
+    RECORD_LOG("}")
     return search_param_list
 
 
@@ -352,36 +359,36 @@ def get_cv_result_df(cv_results_:dict, adjust_paras:list, n_cv):
 
 def show_CV_result(reg:GridSearchCV, adjust_paras, classifi_scoring):
     # pprint(reg.cv_results_)
-    Logger.info('XXXXX查看CV的结果XXXXXX')
-    Logger.info(
+    RECORD_LOG('XXXXX查看CV的结果XXXXXX')
+    RECORD_LOG(
         '{}: MAX of mean_test_score = {}'.format(classifi_scoring, reg.cv_results_.get('mean_test_score').max()))
-    Logger.info(
+    RECORD_LOG(
         '{}: MAX of mean_train_score = {}'.format(classifi_scoring, reg.cv_results_.get('mean_train_score').max()))
     cv_result_df = get_cv_result_df(reg.cv_results_, adjust_paras, reg.cv.n_splits)
     with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
-        Logger.info('\n对各组调参参数的交叉训练验证细节为：\n{}'.format(cv_result_df))
+        RECORD_LOG('\n对各组调参参数的交叉训练验证细节为：\n{}'.format(cv_result_df))
     if len(adjust_paras) == 1 and platform.system() == 'Windows':
         every_para_score = pd.Series()
         every_para_score.name = adjust_paras[0]
     for i in range(len(reg.cv_results_.get('mean_test_score'))):
-        # Logger.info('+++++++++++')
-        # Logger.info('mean_test_score = {}'.format(reg.cv_results_.get('mean_test_score')[i]))
-        # Logger.info('mean_train_score = {}'.format(reg.cv_results_.get('mean_train_score')[i]))
+        # RECORD_LOG('+++++++++++')
+        # RECORD_LOG('mean_test_score = {}'.format(reg.cv_results_.get('mean_test_score')[i]))
+        # RECORD_LOG('mean_train_score = {}'.format(reg.cv_results_.get('mean_train_score')[i]))
         param_str = "{"
         for k in adjust_paras:
             param_str += "'{}': {}, ".format(k, reg.cv_results_.get('params')[i][k])
         param_str = param_str[:-2] + "}"
-        # Logger.info('params = {}'.format(param_str))
+        # RECORD_LOG('params = {}'.format(param_str))
         if len(adjust_paras) == 1 and platform.system() == 'Windows':
             record_param_value = reg.cv_results_.get('params')[i].get(adjust_paras[0])
             if isinstance(record_param_value, tuple):
                 record_param_value = '{}'.format(reduce(lambda n_h, n_h1: str(n_h) + '_' + str(n_h1), record_param_value))
             every_para_score.loc[record_param_value] = reg.cv_results_.get('mean_test_score')[i]
     print('best_score_ = {}'.format(reg.best_score_))
-    Logger.info('reg.best_score_: %f' % reg.best_score_)
+    RECORD_LOG('reg.best_score_: %f' % reg.best_score_)
     for param_name in sorted(reg.best_params_.keys()):
         if param_name in adjust_paras:
-            Logger.info("调参选择为%s: %r" % (param_name, reg.best_params_[param_name]))
+            RECORD_LOG("调参选择为%s: %r" % (param_name, reg.best_params_[param_name]))
     if len(adjust_paras) == 1 and platform.system() == 'Windows':
         every_para_score.plot(kind='line', title=u'模型参数{}和评分{}的变化图示'.format(adjust_paras[0], classifi_scoring),
                               style='o-')
@@ -399,7 +406,7 @@ def selfregressor_predict_and_score(reg, last_valida_df):
     mean_sqr_error = mean_squared_error(y_true=verify_golden, y_pred=predict_)
     median_abs_error = median_absolute_error(y_true=verify_golden, y_pred=predict_)
     r2score = r2_score(y_true=verify_golden, y_pred=predict_)
-    # Logger.info('使用sklearn的打分评价得到explained_var_score={}, mean_abs_error={}, mean_sqr_error={}, median_abs_error={}, r2score={}'
+    # RECORD_LOG('使用sklearn的打分评价得到explained_var_score={}, mean_abs_error={}, mean_sqr_error={}, median_abs_error={}, r2score={}'
     #             .format(explained_var_score, mean_abs_error, mean_sqr_error, median_abs_error, r2score))
     return predict_, [explained_var_score, mean_abs_error, mean_sqr_error, median_abs_error, r2score]
 
@@ -413,31 +420,31 @@ if __name__ == "__main__":
     # brand_fill_type= "fill_paulnull" or "base_other_cols" or "base_NB" or "base_GRU"
     # item_desc_fill_type= 'fill_' or 'fill_paulnull' or 'base_name'
     data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='base_name', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
-    Logger.info('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
+    RECORD_LOG('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
     data_reader.del_redundant_cols()
 
     # PROCESS CATEGORICAL DATA
-    Logger.info("Handling categorical variables...")
+    RECORD_LOG("Handling categorical variables...")
     data_reader.le_encode()
-    Logger.info('[{:.4f}s] Finished PROCESSING CATEGORICAL DATA...'.format(time.time() - start_time))
+    RECORD_LOG('[{:.4f}s] Finished PROCESSING CATEGORICAL DATA...'.format(time.time() - start_time))
     with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
                            'display.height', None):
-        Logger.info('\n{}'.format(data_reader.train_df.head(3)))
+        RECORD_LOG('\n{}'.format(data_reader.train_df.head(3)))
 
     # PROCESS TEXT: RAW
-    Logger.info("Text to seq process...")
-    Logger.info("   Fitting tokenizer...")
+    RECORD_LOG("Text to seq process...")
+    RECORD_LOG("   Fitting tokenizer...")
     data_reader.tokenizer_text_col()
     with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
                            'display.height', None):
-        Logger.info('\n{}'.format(data_reader.train_df.head(3)))
-    Logger.info('[{:.4f}s] Finished PROCESSING TEXT DATA...'.format(time.time() - start_time))
+        RECORD_LOG('\n{}'.format(data_reader.train_df.head(3)))
+    RECORD_LOG('[{:.4f}s] Finished PROCESSING TEXT DATA...'.format(time.time() - start_time))
 
     # EMBEDDINGS MAX VALUE
     # Base on the histograms, we select the next lengths
     data_reader.ensure_fixed_value()
-    Logger.info('[{:.4f}s] Finished EMBEDDINGS MAX VALUE...'.format(time.time() - start_time))
+    RECORD_LOG('[{:.4f}s] Finished EMBEDDINGS MAX VALUE...'.format(time.time() - start_time))
 
     data_reader.del_redundant_cols()
 
@@ -456,32 +463,59 @@ if __name__ == "__main__":
     cv_grid_params = CvGridParams()
     adjust_para_list = print_param(cv_grid_params)
 
-    # 4. Use GridSearchCV to tuning model.
-    regress_model = SelfLocalRegressor(data_reader=data_reader)
-    print('Begin to train self-defined sklearn-API regressor.')
-    reg = train_model_with_gridsearch(regress_model, sample_df, cv_grid_params)
-    Logger.info('[{:.4f}s] Finished Grid Search and training.'.format(time.time() - start_time))
+    if LOCAL_FLAG:
+        # 4. Use GridSearchCV to tuning model.
+        regress_model = SelfLocalRegressor(data_reader=data_reader)
+        print('Begin to train self-defined sklearn-API regressor.')
+        reg = train_model_with_gridsearch(regress_model, sample_df, cv_grid_params)
+        RECORD_LOG('[{:.4f}s] Finished Grid Search and training.'.format(time.time() - start_time))
 
-    # 5. See the CV result
-    show_CV_result(reg, adjust_paras=adjust_para_list, classifi_scoring=cv_grid_params.scoring)
+        # 5. See the CV result
+        show_CV_result(reg, adjust_paras=adjust_para_list, classifi_scoring=cv_grid_params.scoring)
 
-    # 6. Use Trained Regressor to predict the last validation dataset
-    validation_scores = pd.DataFrame(columns=["explained_var_score", "mean_abs_error", "mean_sqr_error", "median_abs_error", "r2score"])
-    predict_y, score_list = selfregressor_predict_and_score(reg, last_valida_df)
-    validation_scores.loc["last_valida_df"] = score_list
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
-        Logger.info("对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
-    last_valida_df['predict'] = predict_y
-    # analysis_predict_result(last_valida_df)
+        # 6. Use Trained Regressor to predict the last validation dataset
+        validation_scores = pd.DataFrame(columns=["explained_var_score", "mean_abs_error", "mean_sqr_error", "median_abs_error", "r2score"])
+        predict_y, score_list = selfregressor_predict_and_score(reg, last_valida_df)
+        validation_scores.loc["last_valida_df"] = score_list
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
+            RECORD_LOG("对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
+        last_valida_df['predict'] = predict_y
+        # analysis_predict_result(last_valida_df)
 
-    # 7. Predict and submit
-    test_preds = reg.predict(test_df)
-    test_preds = np.expm1(test_preds)
-    Logger.info('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
-    submission = test_df[["test_id"]]
-    submission["price"] = test_preds
-    submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
-    Logger.info('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
+        # 7. Predict and submit
+        test_preds = reg.predict(test_df)
+        test_preds = np.expm1(test_preds)
+        RECORD_LOG('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
+        submission = test_df[["test_id"]]
+        submission["price"] = test_preds
+        submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
+        RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
+    else:
+        assert len(adjust_para_list) == 0
+        cv_grid_params.rm_list_dict_params()
+        regress_model = SelfLocalRegressor(data_reader=data_reader, **cv_grid_params.all_params)
+
+        train_X = sample_df.drop('target', axis=1)
+        train_y = sample_df['target'].values
+        regress_model.fit(train_X, train_y)
+
+        # 6. Use Trained Regressor to predict the last validation dataset
+        validation_scores = pd.DataFrame(
+            columns=["explained_var_score", "mean_abs_error", "mean_sqr_error", "median_abs_error", "r2score"])
+        predict_y, score_list = selfregressor_predict_and_score(regress_model, last_valida_df)
+        validation_scores.loc["last_valida_df"] = score_list
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
+            RECORD_LOG("对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
+        last_valida_df['predict'] = predict_y
+
+        test_preds = regress_model.predict(test_df)
+        test_preds = np.expm1(test_preds)
+        RECORD_LOG('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
+        submission = test_df[["test_id"]]
+        submission["price"] = test_preds
+        submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]),
+                          index=False)
+        RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
 
 
 

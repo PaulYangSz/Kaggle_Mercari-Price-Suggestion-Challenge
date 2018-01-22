@@ -251,10 +251,11 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         # X = check_array(X)  # ValueError: setting an array element with a sequence. This is caused by "XXX_seq"
 
         keras_X = self.data_reader.get_keras_dict_data(X)
-        gru_y = self.emb_GRU_model.predict(keras_X, batch_size=self.batch_size)
-        gru_y = gru_y.reshape(gru_y.shape[0])
 
-        return gru_y
+        interlayer_output = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
+        print('interlayer_output: type={}, shape = {}'.format(type(interlayer_output), interlayer_output.shape))
+
+        return self.lgb_model.predict(interlayer_output)
 
 
 class CvGridParams(object):
@@ -439,18 +440,19 @@ if __name__ == "__main__":
 
     data_reader.del_redundant_cols()
 
-    if LOCAL_FLAG:
-        # EXTRACT DEVELOPMENT TEST
-        sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
-        print(sample_df.shape)
-        print(last_valida_df.shape)
+    # EXTRACT DEVELOPMENT TEST
+    sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
+    print(sample_df.shape)
+    print(last_valida_df.shape)
 
-        # 2. Check self-made estimator
-        # check_estimator(LocalRegressor)  # Can not pass because need default DataReader in __init__.
+    # 2. Check self-made estimator
+    # check_estimator(LocalRegressor)  # Can not pass because need default DataReader in __init__.
 
-        # 3. Parameters of GridSearchCV use.
-        cv_grid_params = CvGridParams()
-        adjust_para_list = print_param(cv_grid_params)
+    # 3. Parameters of GridSearchCV use.
+    cv_grid_params = CvGridParams()
+    adjust_para_list = print_param(cv_grid_params)
+
+    if len(adjust_para_list) > 0:
 
         # 4. Use GridSearchCV to tuning model.
         regress_model = EmbLgbRegressor(data_reader=data_reader)
@@ -479,13 +481,6 @@ if __name__ == "__main__":
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
     else:
-        sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
-        print(sample_df.shape)
-        print(last_valida_df.shape)
-
-        cv_grid_params = CvGridParams()
-        adjust_para_list = print_param(cv_grid_params)
-        assert len(adjust_para_list) == 0
         cv_grid_params.rm_list_dict_params()
         regress_model = EmbLgbRegressor(data_reader=data_reader, **cv_grid_params.all_params)
 

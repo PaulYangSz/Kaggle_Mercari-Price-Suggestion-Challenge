@@ -5,7 +5,8 @@
 Use sklearn based API model to local run and tuning.
 """
 import platform
-
+import os
+import sys
 import pandas as pd
 import numpy as np
 import time
@@ -31,30 +32,43 @@ import logging.config
 import lightgbm as lgb
 
 if platform.system() == 'Windows':
+    N_CORE = 1
     LOCAL_FLAG = True
     import matplotlib.pyplot as plt
     plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
     plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
     # 有中文出现的情况，需要u'内容'
+elif 's30' in platform.node():
+    N_CORE = 1
+    LOCAL_FLAG = True
 else:
     LOCAL_FLAG = False
 
-from ProjectCodes.model.DataReader import DataReader
-from ProjectCodes.model.DataReader import record_log
+if LOCAL_FLAG:
+    CURR_DIR_Path = os.path.abspath(os.path.dirname(__file__))
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    ROOT_Path = CURR_DIR_Path.split('ProjectCodes')[0]
+    sys.path.append(ROOT_Path)
+    from ProjectCodes.model.DataReader import DataReader
+    from ProjectCodes.model.DataReader import record_log
 
-def start_logging():
-    # 加载前面的标准配置
-    from ProjectCodes.logging_config import ConfigLogginfDict
-    logging.config.dictConfig(ConfigLogginfDict(__file__).LOGGING)
-    # 获取loggers其中的一个日志管理器
-    logger = logging.getLogger("default")
-    logger.info('\n\n#################\n~~~~~~Start~~~~~~\n#################')
-    print(type(logger))
-    return logger
-if 'Logger' not in dir():
-    Logger = start_logging()
+    def start_logging():
+        # 加载前面的标准配置
+        from ProjectCodes.logging_config import ConfigLogginfDict
+        logging.config.dictConfig(ConfigLogginfDict(__file__).LOGGING)
+        # 获取loggers其中的一个日志管理器
+        logger = logging.getLogger("default")
+        logger.info('\n\n#################\n~~~~~~Start~~~~~~\n#################')
+        print(type(logger))
+        return logger
+    if 'Logger' not in dir():
+        Logger = start_logging()
+
+input_LGB_all_concat = False
+
 
 RECORD_LOG = lambda log_str: record_log(LOCAL_FLAG, log_str)
+
 
 class EmbLgbRegressor(BaseEstimator, RegressorMixin):
     """ An sklearn-API regressor.
@@ -138,8 +152,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         emb_brand = Embedding(reader.n_brand, self.brand_emb_dim)(brand)
 
         # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
-        rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0])(emb_name)
-        rnn_layer_item_desc = GRU(units=self.GRU_layers_out_dim[1])(emb_item_desc)  # rnn_layer_item_desc.shape=[None, 16]
+        rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0], name='name_gru')(emb_name)
+        rnn_layer_item_desc = GRU(units=self.GRU_layers_out_dim[1], name='item_desc_gru')(emb_item_desc)  # rnn_layer_item_desc.shape=[None, 16]
         # rnn_layer_cat_name = GRU(units=self.GRU_layers_out_dim[2])(emb_category_name)
 
         # main layer
@@ -171,8 +185,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         return model
 
     def get_GRU_interlayer_out(self, trained_gru_model:Model, layer_name:str, input_data):
-        intermediate_layer_model = Model(input=trained_gru_model.input,
-                                         output=trained_gru_model.get_layer(layer_name).output)
+        intermediate_layer_model = Model(inputs=trained_gru_model.input,
+                                         outputs=trained_gru_model.get_layer(layer_name).output)
         intermediate_output = intermediate_layer_model.predict(input_data)
         return intermediate_output
 
@@ -213,8 +227,15 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
                                          # callbacks=[TensorBoard('./logs/'+log_subdir)],
                                          verbose=10)
 
-        interlayer_output = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
-        print('interlayer_output: type={}, shape = {}'.format(type(interlayer_output), interlayer_output.shape))
+        if input_LGB_all_concat:
+            lgb_X = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
+            print('interlayer_output: type={}, shape = {}'.format(type(lgb_X), lgb_X.shape))
+        else:
+            name_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='name_gru', input_data=keras_X)
+            item_desc_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='item_desc_gru', input_data=keras_X)
+            other_le_feats = X[['brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']].values
+            print("prepare lgb_X,", name_gru_encode.shape, item_desc_gru_encode.shape, other_le_feats.shape)
+            lgb_X = np.hstack((name_gru_encode, item_desc_gru_encode, other_le_feats))
         self.lgb_model = lgb.LGBMRegressor(num_leaves=self.lgb_num_leaves,
                                            max_depth=self.lgb_max_depth,
                                            learning_rate=self.lgb_learning_rate,
@@ -228,7 +249,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
                                            reg_alpha=self.lgb_reg_alpha,
                                            reg_lambda=self.lgb_reg_lambda,
                                            random_state=self.lgb_rand_state)
-        self.lgb_model.fit(interlayer_output, y)
+        self.lgb_model.fit(lgb_X, y)
+
         # Return the regressor
         return self
 
@@ -252,10 +274,17 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
 
         keras_X = self.data_reader.get_keras_dict_data(X)
 
-        interlayer_output = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
-        print('interlayer_output: type={}, shape = {}'.format(type(interlayer_output), interlayer_output.shape))
+        if input_LGB_all_concat:
+            lgb_X = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
+            print('interlayer_output: type={}, shape = {}'.format(type(lgb_X), lgb_X.shape))
+        else:
+            name_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='name_gru', input_data=keras_X)
+            item_desc_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='item_desc_gru', input_data=keras_X)
+            other_le_feats = X[['brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']].values
+            print("prepare lgb_X,", name_gru_encode.shape, item_desc_gru_encode.shape, other_le_feats.shape)
+            lgb_X = np.hstack((name_gru_encode, item_desc_gru_encode, other_le_feats))
 
-        return self.lgb_model.predict(interlayer_output)
+        return self.lgb_model.predict(lgb_X)
 
 
 class CvGridParams(object):
@@ -321,6 +350,7 @@ def print_param(cv_grid_params:CvGridParams):
 
 def train_model_with_gridsearch(regress_model:EmbLgbRegressor, sample_df, cv_grid_params:CvGridParams):
     sample_X = sample_df.drop('target', axis=1)
+    print('sample_X.cols={}'.format(sample_X.columns))
     # sample_X = sample_X[['name_int_seq', 'desc_int_seq', 'brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']]  # , 'cat_int_seq'
     sample_y = sample_df['target']
 
@@ -387,12 +417,12 @@ def show_CV_result(reg:GridSearchCV, adjust_paras, classifi_scoring):
         plt.show()
 
 
-def selfregressor_predict_and_score(reg, last_valida_df):
+def selfregressor_predict_and_score(reg, valida_df):
     print('对样本集中留出的验证集进行预测:')
-    verify_X = last_valida_df.drop('target', axis=1)
+    verify_X = valida_df.drop('target', axis=1)
     predict_ = reg.predict(verify_X)
     # print(predict_)
-    verify_golden = last_valida_df['target'].values
+    verify_golden = valida_df['target'].values
     explained_var_score = explained_variance_score(y_true=verify_golden, y_pred=predict_)
     mean_abs_error = mean_absolute_error(y_true=verify_golden, y_pred=predict_)
     mean_sqr_error = mean_squared_error(y_true=verify_golden, y_pred=predict_)
@@ -444,6 +474,7 @@ if __name__ == "__main__":
     sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
     print(sample_df.shape)
     print(last_valida_df.shape)
+    last_valida_df.is_copy = None
 
     # 2. Check self-made estimator
     # check_estimator(LocalRegressor)  # Can not pass because need default DataReader in __init__.
@@ -476,7 +507,7 @@ if __name__ == "__main__":
         test_preds = reg.predict(test_df)
         test_preds = np.expm1(test_preds)
         RECORD_LOG('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
-        submission = test_df[["test_id"]]
+        submission = test_df[["test_id"]].copy()
         submission["price"] = test_preds
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
@@ -500,7 +531,7 @@ if __name__ == "__main__":
         test_preds = regress_model.predict(test_df)
         test_preds = np.expm1(test_preds)
         RECORD_LOG('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
-        submission = test_df[["test_id"]]
+        submission = test_df[["test_id"]].copy()
         submission["price"] = test_preds
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))

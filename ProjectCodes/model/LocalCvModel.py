@@ -5,7 +5,8 @@
 Use sklearn based API model to local run and tuning.
 """
 import platform
-
+import os
+import sys
 import pandas as pd
 import numpy as np
 import time
@@ -31,29 +32,42 @@ import logging.config
 import lightgbm as lgb
 
 if platform.system() == 'Windows':
+    N_CORE = 1
     LOCAL_FLAG = True
     import matplotlib.pyplot as plt
     plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
     plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
     # 有中文出现的情况，需要u'内容'
+elif 's30' in platform.node():
+    N_CORE = 1
+    LOCAL_FLAG = True
 else:
     LOCAL_FLAG = False
 
-from ProjectCodes.model.DataReader import DataReader
-from ProjectCodes.model.DataReader import record_log
+if LOCAL_FLAG:
+    CURR_DIR_Path = os.path.abspath(os.path.dirname(__file__))
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    ROOT_Path = CURR_DIR_Path.split('ProjectCodes')[0]
+    sys.path.append(ROOT_Path)
+    from ProjectCodes.model.DataReader import DataReader
+    from ProjectCodes.model.DataReader import record_log
 
 
-def start_logging():
-    # 加载前面的标准配置
-    from ProjectCodes.logging_config import ConfigLogginfDict
-    logging.config.dictConfig(ConfigLogginfDict(__file__).LOGGING)
-    # 获取loggers其中的一个日志管理器
-    logger = logging.getLogger("default")
-    logger.info('\n\n#################\n~~~~~~Start~~~~~~\n#################')
-    print(type(logger))
-    return logger
-if 'Logger' not in dir():
-    Logger = start_logging()
+USE_STACK = False
+
+
+if LOCAL_FLAG:
+    def start_logging():
+        # 加载前面的标准配置
+        from ProjectCodes.logging_config import ConfigLogginfDict
+        logging.config.dictConfig(ConfigLogginfDict(__file__).LOGGING)
+        # 获取loggers其中的一个日志管理器
+        logger = logging.getLogger("default")
+        logger.info('\n\n#################\n~~~~~~Start~~~~~~\n#################')
+        print(type(logger))
+        return logger
+    if 'Logger' not in dir():
+        Logger = start_logging()
 
 RECORD_LOG = lambda log_str: record_log(LOCAL_FLAG, log_str)
 
@@ -96,9 +110,10 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.lr_init = lr_init
         self.lr_final = lr_final
 
-        self.ridge_lgm_models_list = self.get_ridge_lgm_models()
+        if USE_STACK:
+            self.ridge_lgm_models_list = self.get_ridge_lgm_models()
 
-        self.stack_last_model = Ridge(alpha=.6, copy_X=True, fit_intercept=False, max_iter=100, random_state=101, solver='auto', tol=0.01)
+            self.stack_last_model = Ridge(alpha=.6, copy_X=True, fit_intercept=False, max_iter=100, random_state=101, solver='auto', tol=0.01)
 
     def get_GRU_model(self, reader:DataReader):
         # Inputs
@@ -199,49 +214,49 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         history = self.emb_GRU_model.fit(keras_X, y, epochs=self.epochs, batch_size=self.batch_size, validation_split=0., # 0.01
                                          # callbacks=[TensorBoard('./logs/'+log_subdir)],
                                          verbose=10)
+        if USE_STACK:
+            sparse_X = self.data_reader.get_ridge_sparse_data(X)
+            print('sparse_X.shape={}'.format(sparse_X.shape))
+            self.ridge_lgm_models_list[0].fit(sparse_X, y)
+            self.ridge_lgm_models_list[1].fit(sparse_X, y)
+            params = {
+                'learning_rate': 0.65,
+                'application': 'regression',
+                'max_depth': 3,
+                'num_leaves': 60,
+                'verbosity': -1,
+                'metric': 'RMSE',
+                'data_random_seed': 1,
+                'bagging_fraction': 0.5,
+                'nthread': 4
+            }
 
-        sparse_X = self.data_reader.get_ridge_sparse_data(X)
-        print('sparse_X.shape={}'.format(sparse_X.shape))
-        self.ridge_lgm_models_list[0].fit(sparse_X, y)
-        self.ridge_lgm_models_list[1].fit(sparse_X, y)
-        params = {
-            'learning_rate': 0.65,
-            'application': 'regression',
-            'max_depth': 3,
-            'num_leaves': 60,
-            'verbosity': -1,
-            'metric': 'RMSE',
-            'data_random_seed': 1,
-            'bagging_fraction': 0.5,
-            'nthread': 4
-        }
+            params2 = {
+                'learning_rate': 0.85,
+                'application': 'regression',
+                'max_depth': 3,
+                'num_leaves': 130,
+                'verbosity': -1,
+                'metric': 'RMSE',
+                'data_random_seed': 2,
+                'bagging_fraction': 1,
+                'nthread': 4
+            }
+            d_train = lgb.Dataset(sparse_X, label=y)
+            self.ridge_lgm_models_list[2] = lgb.train(params, train_set=d_train, num_boost_round=7500, valid_sets=d_train, verbose_eval=1000)
+            self.ridge_lgm_models_list[3] = lgb.train(params2, train_set=d_train, num_boost_round=6000, valid_sets=d_train, verbose_eval=500)
 
-        params2 = {
-            'learning_rate': 0.85,
-            'application': 'regression',
-            'max_depth': 3,
-            'num_leaves': 130,
-            'verbosity': -1,
-            'metric': 'RMSE',
-            'data_random_seed': 2,
-            'bagging_fraction': 1,
-            'nthread': 4
-        }
-        d_train = lgb.Dataset(sparse_X, label=y)
-        self.ridge_lgm_models_list[2] = lgb.train(params, train_set=d_train, num_boost_round=7500, valid_sets=d_train, verbose_eval=1000)
-        self.ridge_lgm_models_list[3] = lgb.train(params2, train_set=d_train, num_boost_round=6000, valid_sets=d_train, verbose_eval=500)
-
-        # For stacking
-        gru_y = self.emb_GRU_model.predict(keras_X)
-        gru_y = gru_y.reshape(gru_y.shape[0])
-        ridge1_y = self.ridge_lgm_models_list[0].predict(sparse_X)
-        ridge2_y = self.ridge_lgm_models_list[1].predict(sparse_X)
-        lgb1_y = self.ridge_lgm_models_list[2].predict(sparse_X)
-        lgb2_y = self.ridge_lgm_models_list[3].predict(sparse_X)
-        second_last_df = pd.DataFrame(data={'gru_y':gru_y, 'ridge1_y':ridge1_y, 'ridge2_y':ridge2_y, 'lgb1_y':lgb1_y, 'lgb2_y':lgb2_y},
-                                      columns=['gru_y', 'ridge1_y', 'ridge2_y', 'lgb1_y', 'lgb2_y'])
-        self.stack_last_model.fit(second_last_df, y)
-        RECORD_LOG("In this fold train get stack_last_model's coefficients: {}".format(self.stack_last_model.coef_))
+            # For stacking
+            gru_y = self.emb_GRU_model.predict(keras_X)
+            gru_y = gru_y.reshape(gru_y.shape[0])
+            ridge1_y = self.ridge_lgm_models_list[0].predict(sparse_X)
+            ridge2_y = self.ridge_lgm_models_list[1].predict(sparse_X)
+            lgb1_y = self.ridge_lgm_models_list[2].predict(sparse_X)
+            lgb2_y = self.ridge_lgm_models_list[3].predict(sparse_X)
+            second_last_df = pd.DataFrame(data={'gru_y':gru_y, 'ridge1_y':ridge1_y, 'ridge2_y':ridge2_y, 'lgb1_y':lgb1_y, 'lgb2_y':lgb2_y},
+                                          columns=['gru_y', 'ridge1_y', 'ridge2_y', 'lgb1_y', 'lgb2_y'])
+            self.stack_last_model.fit(second_last_df, y)
+            RECORD_LOG("In this fold train get stack_last_model's coefficients: {}".format(self.stack_last_model.coef_))
 
         # Return the regressor
         return self
@@ -268,16 +283,19 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         gru_y = self.emb_GRU_model.predict(keras_X, batch_size=self.batch_size)
         gru_y = gru_y.reshape(gru_y.shape[0])
 
-        sparse_X = self.data_reader.get_ridge_sparse_data(X)
-        print('sparse_X.shape={}'.format(sparse_X.shape))
-        ridge1_y = self.ridge_lgm_models_list[0].predict(sparse_X)
-        ridge2_y = self.ridge_lgm_models_list[1].predict(sparse_X)
-        lgb1_y = self.ridge_lgm_models_list[2].predict(sparse_X)
-        lgb2_y = self.ridge_lgm_models_list[3].predict(sparse_X)
+        if USE_STACK:
+            sparse_X = self.data_reader.get_ridge_sparse_data(X)
+            print('sparse_X.shape={}'.format(sparse_X.shape))
+            ridge1_y = self.ridge_lgm_models_list[0].predict(sparse_X)
+            ridge2_y = self.ridge_lgm_models_list[1].predict(sparse_X)
+            lgb1_y = self.ridge_lgm_models_list[2].predict(sparse_X)
+            lgb2_y = self.ridge_lgm_models_list[3].predict(sparse_X)
 
-        second_last_df = pd.DataFrame(data={'gru_y': gru_y, 'ridge1_y': ridge1_y, 'ridge2_y': ridge2_y, 'lgb1_y': lgb1_y, 'lgb2_y': lgb2_y},
-                                      columns=['gru_y', 'ridge1_y', 'ridge2_y', 'lgb1_y', 'lgb2_y'])
-        return self.stack_last_model.predict(second_last_df)
+            second_last_df = pd.DataFrame(data={'gru_y': gru_y, 'ridge1_y': ridge1_y, 'ridge2_y': ridge2_y, 'lgb1_y': lgb1_y, 'lgb2_y': lgb2_y},
+                                          columns=['gru_y', 'ridge1_y', 'ridge2_y', 'lgb1_y', 'lgb2_y'])
+            return self.stack_last_model.predict(X=second_last_df)
+        else:
+            return gru_y
 
 
 class CvGridParams(object):
@@ -288,8 +306,8 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'name_emb_dim': [15],  # In name each word's vector length
-                'item_desc_emb_dim': [70],
+                'name_emb_dim': [10, 15, 20],  # In name each word's vector length
+                'item_desc_emb_dim': [60, 70, 80],
                 'cat_name_emb_dim': [20],
                 'brand_emb_dim': [10],
                 'cat_main_emb_dim': [10],
@@ -337,7 +355,7 @@ def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_
 
     reg = GridSearchCV(estimator=regress_model,
                        param_grid=cv_grid_params.all_params,
-                       n_jobs=1,
+                       n_jobs=N_CORE,
                        cv=StratifiedKFold(n_splits=3, shuffle=True, random_state=cv_grid_params.rand_state),
                        scoring=cv_grid_params.scoring,
                        verbose=2,
@@ -463,7 +481,7 @@ if __name__ == "__main__":
     cv_grid_params = CvGridParams()
     adjust_para_list = print_param(cv_grid_params)
 
-    if LOCAL_FLAG:
+    if len(adjust_para_list) > 0:
         # 4. Use GridSearchCV to tuning model.
         regress_model = SelfLocalRegressor(data_reader=data_reader)
         print('Begin to train self-defined sklearn-API regressor.')
@@ -491,7 +509,6 @@ if __name__ == "__main__":
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
     else:
-        assert len(adjust_para_list) == 0
         cv_grid_params.rm_list_dict_params()
         regress_model = SelfLocalRegressor(data_reader=data_reader, **cv_grid_params.all_params)
 

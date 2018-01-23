@@ -23,6 +23,19 @@ from keras.preprocessing.text import Tokenizer
 
 
 if platform.system() == 'Windows':
+    N_CORE = 1
+    LOCAL_FLAG = True
+    import matplotlib.pyplot as plt
+    plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+    plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
+    # 有中文出现的情况，需要u'内容'
+elif 's30' in platform.node():
+    N_CORE = 4
+    LOCAL_FLAG = True
+else:
+    LOCAL_FLAG = False
+
+if LOCAL_FLAG:
     def start_logging():
         # 加载前面的标准配置
         from ProjectCodes.logging_config import ConfigLogginfDict
@@ -210,8 +223,8 @@ class DataReader():
         self.item_desc_fill_type = item_desc_fill_type
 
         if local_flag:
-            train_df = pd.read_csv("../" + TRAIN_FILE, sep='\t', engine='python')
-            test_df = pd.read_csv("../" + TEST_FILE, sep='\t', engine='python')
+            train_df = pd.read_csv("../" + TRAIN_FILE, sep='\t', engine='python')#, nrows=10000)
+            test_df = pd.read_csv("../" + TEST_FILE, sep='\t', engine='python')#, nrows=3000)
         else:
             train_df = pd.read_csv(TRAIN_FILE, sep='\t')
             test_df = pd.read_csv(TEST_FILE, sep='\t')
@@ -490,7 +503,7 @@ class DataReader():
         :return: sample, validation, test
         """
         self.train_df['target'] = np.log1p(self.train_df['price'])
-        dsample, dvalid = train_test_split(self.train_df, random_state=666, train_size=0.99)
+        dsample, dvalid = train_test_split(self.train_df, random_state=666, test_size=0.01)
         record_log(self.local_flag, "train_test_split: sample={}, validation={}".format(dsample.shape, dvalid.shape))
         return dsample, dvalid, self.test_df
 

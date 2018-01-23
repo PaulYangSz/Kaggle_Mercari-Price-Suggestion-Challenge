@@ -23,6 +23,19 @@ from keras.preprocessing.text import Tokenizer
 
 
 if platform.system() == 'Windows':
+    N_CORE = 1
+    LOCAL_FLAG = True
+    import matplotlib.pyplot as plt
+    plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+    plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
+    # 有中文出现的情况，需要u'内容'
+elif 's30' in platform.node():
+    N_CORE = 4
+    LOCAL_FLAG = True
+else:
+    LOCAL_FLAG = False
+
+if LOCAL_FLAG:
     def start_logging():
         # 加载前面的标准配置
         from ProjectCodes.logging_config import ConfigLogginfDict
@@ -210,8 +223,8 @@ class DataReader():
         self.item_desc_fill_type = item_desc_fill_type
 
         if local_flag:
-            train_df = pd.read_csv("../" + TRAIN_FILE, sep='\t', engine='python')
-            test_df = pd.read_csv("../" + TEST_FILE, sep='\t', engine='python')
+            train_df = pd.read_csv("../" + TRAIN_FILE, sep='\t', engine='python')#, nrows=10000)
+            test_df = pd.read_csv("../" + TEST_FILE, sep='\t', engine='python')#, nrows=3000)
         else:
             train_df = pd.read_csv(TRAIN_FILE, sep='\t')
             test_df = pd.read_csv(TEST_FILE, sep='\t')
@@ -490,7 +503,7 @@ class DataReader():
         :return: sample, validation, test
         """
         self.train_df['target'] = np.log1p(self.train_df['price'])
-        dsample, dvalid = train_test_split(self.train_df, random_state=666, train_size=0.99)
+        dsample, dvalid = train_test_split(self.train_df, random_state=666, test_size=0.01)
         record_log(self.local_flag, "train_test_split: sample={}, validation={}".format(dsample.shape, dvalid.shape))
         return dsample, dvalid, self.test_df
 
@@ -603,7 +616,8 @@ class DataReader():
 Use sklearn based API model to local run and tuning.
 """
 import platform
-
+import os
+import sys
 import pandas as pd
 import numpy as np
 import time
@@ -629,13 +643,42 @@ import logging.config
 import lightgbm as lgb
 
 if platform.system() == 'Windows':
+    N_CORE = 1
     LOCAL_FLAG = True
     import matplotlib.pyplot as plt
     plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
     plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
     # 有中文出现的情况，需要u'内容'
+elif 's30' in platform.node():
+    N_CORE = 1
+    LOCAL_FLAG = True
 else:
     LOCAL_FLAG = False
+
+if LOCAL_FLAG:
+    CURR_DIR_Path = os.path.abspath(os.path.dirname(__file__))
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    ROOT_Path = CURR_DIR_Path.split('ProjectCodes')[0]
+    sys.path.append(ROOT_Path)
+    from ProjectCodes.model.DataReader import DataReader
+    from ProjectCodes.model.DataReader import record_log
+
+    def start_logging():
+        # 加载前面的标准配置
+        from ProjectCodes.logging_config import ConfigLogginfDict
+        logging.config.dictConfig(ConfigLogginfDict(__file__).LOGGING)
+        # 获取loggers其中的一个日志管理器
+        logger = logging.getLogger("default")
+        logger.info('\n\n#################\n~~~~~~Start~~~~~~\n#################')
+        print(type(logger))
+        return logger
+    if 'Logger' not in dir():
+        Logger = start_logging()
+
+input_LGB_all_concat = False
+
+
+RECORD_LOG = lambda log_str: record_log(LOCAL_FLAG, log_str)
 
 
 class EmbLgbRegressor(BaseEstimator, RegressorMixin):
@@ -720,8 +763,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         emb_brand = Embedding(reader.n_brand, self.brand_emb_dim)(brand)
 
         # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
-        rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0])(emb_name)
-        rnn_layer_item_desc = GRU(units=self.GRU_layers_out_dim[1])(emb_item_desc)  # rnn_layer_item_desc.shape=[None, 16]
+        rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0], name='name_gru')(emb_name)
+        rnn_layer_item_desc = GRU(units=self.GRU_layers_out_dim[1], name='item_desc_gru')(emb_item_desc)  # rnn_layer_item_desc.shape=[None, 16]
         # rnn_layer_cat_name = GRU(units=self.GRU_layers_out_dim[2])(emb_category_name)
 
         # main layer
@@ -753,8 +796,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         return model
 
     def get_GRU_interlayer_out(self, trained_gru_model:Model, layer_name:str, input_data):
-        intermediate_layer_model = Model(input=trained_gru_model.input,
-                                         output=trained_gru_model.get_layer(layer_name).output)
+        intermediate_layer_model = Model(inputs=trained_gru_model.input,
+                                         outputs=trained_gru_model.get_layer(layer_name).output)
         intermediate_output = intermediate_layer_model.predict(input_data)
         return intermediate_output
 
@@ -795,8 +838,15 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
                                          # callbacks=[TensorBoard('./logs/'+log_subdir)],
                                          verbose=10)
 
-        interlayer_output = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
-        print('interlayer_output: type={}, shape = {}'.format(type(interlayer_output), interlayer_output.shape))
+        if input_LGB_all_concat:
+            lgb_X = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
+            print('interlayer_output: type={}, shape = {}'.format(type(lgb_X), lgb_X.shape))
+        else:
+            name_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='name_gru', input_data=keras_X)
+            item_desc_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='item_desc_gru', input_data=keras_X)
+            other_le_feats = X[['brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']].values
+            print("prepare lgb_X,", name_gru_encode.shape, item_desc_gru_encode.shape, other_le_feats.shape)
+            lgb_X = np.hstack((name_gru_encode, item_desc_gru_encode, other_le_feats))
         self.lgb_model = lgb.LGBMRegressor(num_leaves=self.lgb_num_leaves,
                                            max_depth=self.lgb_max_depth,
                                            learning_rate=self.lgb_learning_rate,
@@ -810,7 +860,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
                                            reg_alpha=self.lgb_reg_alpha,
                                            reg_lambda=self.lgb_reg_lambda,
                                            random_state=self.lgb_rand_state)
-        self.lgb_model.fit(interlayer_output, y)
+        self.lgb_model.fit(lgb_X, y)
+
         # Return the regressor
         return self
 
@@ -833,10 +884,18 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         # X = check_array(X)  # ValueError: setting an array element with a sequence. This is caused by "XXX_seq"
 
         keras_X = self.data_reader.get_keras_dict_data(X)
-        gru_y = self.emb_GRU_model.predict(keras_X, batch_size=self.batch_size)
-        gru_y = gru_y.reshape(gru_y.shape[0])
 
-        return gru_y
+        if input_LGB_all_concat:
+            lgb_X = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
+            print('interlayer_output: type={}, shape = {}'.format(type(lgb_X), lgb_X.shape))
+        else:
+            name_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='name_gru', input_data=keras_X)
+            item_desc_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='item_desc_gru', input_data=keras_X)
+            other_le_feats = X[['brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']].values
+            print("prepare lgb_X,", name_gru_encode.shape, item_desc_gru_encode.shape, other_le_feats.shape)
+            lgb_X = np.hstack((name_gru_encode, item_desc_gru_encode, other_le_feats))
+
+        return self.lgb_model.predict(lgb_X)
 
 
 class CvGridParams(object):
@@ -886,22 +945,23 @@ class CvGridParams(object):
 
 
 def print_param(cv_grid_params:CvGridParams):
-    record_log(LOCAL_FLAG, '选取的模型参数为：')
-    record_log(LOCAL_FLAG, "param_name = '{}'".format(cv_grid_params.name))
-    record_log(LOCAL_FLAG, "regression loss = {}".format(cv_grid_params.scoring))
-    record_log(LOCAL_FLAG, "rand_state = {}".format(cv_grid_params.rand_state))
-    record_log(LOCAL_FLAG, "param_dict = {")
+    RECORD_LOG('选取的模型参数为：')
+    RECORD_LOG("param_name = '{}'".format(cv_grid_params.name))
+    RECORD_LOG("regression loss = {}".format(cv_grid_params.scoring))
+    RECORD_LOG("rand_state = {}".format(cv_grid_params.rand_state))
+    RECORD_LOG("param_dict = {")
     search_param_list = []
     for k, v in cv_grid_params.all_params.items():
-        record_log(LOCAL_FLAG, "\t'{}' = {}".format(k, v))
+        RECORD_LOG("\t'{}' = {}".format(k, v))
         if len(v) > 1:
             search_param_list.append(k)
-    record_log(LOCAL_FLAG, "}")
+    RECORD_LOG("}")
     return search_param_list
 
 
 def train_model_with_gridsearch(regress_model:EmbLgbRegressor, sample_df, cv_grid_params:CvGridParams):
     sample_X = sample_df.drop('target', axis=1)
+    print('sample_X.cols={}'.format(sample_X.columns))
     # sample_X = sample_X[['name_int_seq', 'desc_int_seq', 'brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']]  # , 'cat_int_seq'
     sample_y = sample_df['target']
 
@@ -932,54 +992,54 @@ def get_cv_result_df(cv_results_:dict, adjust_paras:list, n_cv):
 
 def show_CV_result(reg:GridSearchCV, adjust_paras, classifi_scoring):
     # pprint(reg.cv_results_)
-    record_log(LOCAL_FLAG, 'XXXXX查看CV的结果XXXXXX')
-    record_log(LOCAL_FLAG,
+    RECORD_LOG('XXXXX查看CV的结果XXXXXX')
+    RECORD_LOG(
         '{}: MAX of mean_test_score = {}'.format(classifi_scoring, reg.cv_results_.get('mean_test_score').max()))
-    record_log(LOCAL_FLAG,
+    RECORD_LOG(
         '{}: MAX of mean_train_score = {}'.format(classifi_scoring, reg.cv_results_.get('mean_train_score').max()))
     cv_result_df = get_cv_result_df(reg.cv_results_, adjust_paras, reg.cv.n_splits)
     with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
-        record_log(LOCAL_FLAG, '\n对各组调参参数的交叉训练验证细节为：\n{}'.format(cv_result_df))
+        RECORD_LOG('\n对各组调参参数的交叉训练验证细节为：\n{}'.format(cv_result_df))
     if len(adjust_paras) == 1 and platform.system() == 'Windows':
         every_para_score = pd.Series()
         every_para_score.name = adjust_paras[0]
     for i in range(len(reg.cv_results_.get('mean_test_score'))):
-        # record_log(LOCAL_FLAG, '+++++++++++')
-        # record_log(LOCAL_FLAG, 'mean_test_score = {}'.format(reg.cv_results_.get('mean_test_score')[i]))
-        # record_log(LOCAL_FLAG, 'mean_train_score = {}'.format(reg.cv_results_.get('mean_train_score')[i]))
+        # RECORD_LOG('+++++++++++')
+        # RECORD_LOG('mean_test_score = {}'.format(reg.cv_results_.get('mean_test_score')[i]))
+        # RECORD_LOG('mean_train_score = {}'.format(reg.cv_results_.get('mean_train_score')[i]))
         param_str = "{"
         for k in adjust_paras:
             param_str += "'{}': {}, ".format(k, reg.cv_results_.get('params')[i][k])
         param_str = param_str[:-2] + "}"
-        # record_log(LOCAL_FLAG, 'params = {}'.format(param_str))
+        # RECORD_LOG('params = {}'.format(param_str))
         if len(adjust_paras) == 1 and platform.system() == 'Windows':
             record_param_value = reg.cv_results_.get('params')[i].get(adjust_paras[0])
             if isinstance(record_param_value, tuple):
                 record_param_value = '{}'.format(reduce(lambda n_h, n_h1: str(n_h) + '_' + str(n_h1), record_param_value))
             every_para_score.loc[record_param_value] = reg.cv_results_.get('mean_test_score')[i]
     print('best_score_ = {}'.format(reg.best_score_))
-    record_log(LOCAL_FLAG, 'reg.best_score_: %f' % reg.best_score_)
+    RECORD_LOG('reg.best_score_: %f' % reg.best_score_)
     for param_name in sorted(reg.best_params_.keys()):
         if param_name in adjust_paras:
-            record_log(LOCAL_FLAG, "调参选择为%s: %r" % (param_name, reg.best_params_[param_name]))
+            RECORD_LOG("调参选择为%s: %r" % (param_name, reg.best_params_[param_name]))
     if len(adjust_paras) == 1 and platform.system() == 'Windows':
         every_para_score.plot(kind='line', title=u'模型参数{}和评分{}的变化图示'.format(adjust_paras[0], classifi_scoring),
                               style='o-')
         plt.show()
 
 
-def selfregressor_predict_and_score(reg, last_valida_df):
+def selfregressor_predict_and_score(reg, valida_df):
     print('对样本集中留出的验证集进行预测:')
-    verify_X = last_valida_df.drop('target', axis=1)
+    verify_X = valida_df.drop('target', axis=1)
     predict_ = reg.predict(verify_X)
     # print(predict_)
-    verify_golden = last_valida_df['target'].values
+    verify_golden = valida_df['target'].values
     explained_var_score = explained_variance_score(y_true=verify_golden, y_pred=predict_)
     mean_abs_error = mean_absolute_error(y_true=verify_golden, y_pred=predict_)
     mean_sqr_error = mean_squared_error(y_true=verify_golden, y_pred=predict_)
     median_abs_error = median_absolute_error(y_true=verify_golden, y_pred=predict_)
     r2score = r2_score(y_true=verify_golden, y_pred=predict_)
-    # record_log(LOCAL_FLAG, '使用sklearn的打分评价得到explained_var_score={}, mean_abs_error={}, mean_sqr_error={}, median_abs_error={}, r2score={}'
+    # RECORD_LOG('使用sklearn的打分评价得到explained_var_score={}, mean_abs_error={}, mean_sqr_error={}, median_abs_error={}, r2score={}'
     #             .format(explained_var_score, mean_abs_error, mean_sqr_error, median_abs_error, r2score))
     return predict_, [explained_var_score, mean_abs_error, mean_sqr_error, median_abs_error, r2score]
 
@@ -993,52 +1053,54 @@ if __name__ == "__main__":
     # brand_fill_type= "fill_paulnull" or "base_other_cols" or "base_NB" or "base_GRU"
     # item_desc_fill_type= 'fill_' or 'fill_paulnull' or 'base_name'
     data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='base_name', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
-    record_log(LOCAL_FLAG, '[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
+    RECORD_LOG('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
     data_reader.del_redundant_cols()
 
     # PROCESS CATEGORICAL DATA
-    record_log(LOCAL_FLAG, "Handling categorical variables...")
+    RECORD_LOG("Handling categorical variables...")
     data_reader.le_encode()
-    record_log(LOCAL_FLAG, '[{:.4f}s] Finished PROCESSING CATEGORICAL DATA...'.format(time.time() - start_time))
+    RECORD_LOG('[{:.4f}s] Finished PROCESSING CATEGORICAL DATA...'.format(time.time() - start_time))
     with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
                            'display.height', None):
-        record_log(LOCAL_FLAG, '\n{}'.format(data_reader.train_df.head(3)))
+        RECORD_LOG('\n{}'.format(data_reader.train_df.head(3)))
 
     # PROCESS TEXT: RAW
-    record_log(LOCAL_FLAG, "Text to seq process...")
-    record_log(LOCAL_FLAG, "   Fitting tokenizer...")
+    RECORD_LOG("Text to seq process...")
+    RECORD_LOG("   Fitting tokenizer...")
     data_reader.tokenizer_text_col()
     with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
                            'display.height', None):
-        record_log(LOCAL_FLAG, '\n{}'.format(data_reader.train_df.head(3)))
-    record_log(LOCAL_FLAG, '[{:.4f}s] Finished PROCESSING TEXT DATA...'.format(time.time() - start_time))
+        RECORD_LOG('\n{}'.format(data_reader.train_df.head(3)))
+    RECORD_LOG('[{:.4f}s] Finished PROCESSING TEXT DATA...'.format(time.time() - start_time))
 
     # EMBEDDINGS MAX VALUE
     # Base on the histograms, we select the next lengths
     data_reader.ensure_fixed_value()
-    record_log(LOCAL_FLAG, '[{:.4f}s] Finished EMBEDDINGS MAX VALUE...'.format(time.time() - start_time))
+    RECORD_LOG('[{:.4f}s] Finished EMBEDDINGS MAX VALUE...'.format(time.time() - start_time))
 
     data_reader.del_redundant_cols()
 
-    if LOCAL_FLAG:
-        # EXTRACT DEVELOPMENT TEST
-        sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
-        print(sample_df.shape)
-        print(last_valida_df.shape)
+    # EXTRACT DEVELOPMENT TEST
+    sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
+    print(sample_df.shape)
+    print(last_valida_df.shape)
+    last_valida_df.is_copy = None
 
-        # 2. Check self-made estimator
-        # check_estimator(LocalRegressor)  # Can not pass because need default DataReader in __init__.
+    # 2. Check self-made estimator
+    # check_estimator(LocalRegressor)  # Can not pass because need default DataReader in __init__.
 
-        # 3. Parameters of GridSearchCV use.
-        cv_grid_params = CvGridParams()
-        adjust_para_list = print_param(cv_grid_params)
+    # 3. Parameters of GridSearchCV use.
+    cv_grid_params = CvGridParams()
+    adjust_para_list = print_param(cv_grid_params)
+
+    if len(adjust_para_list) > 0:
 
         # 4. Use GridSearchCV to tuning model.
         regress_model = EmbLgbRegressor(data_reader=data_reader)
         print('Begin to train self-defined sklearn-API regressor.')
         reg = train_model_with_gridsearch(regress_model, sample_df, cv_grid_params)
-        record_log(LOCAL_FLAG, '[{:.4f}s] Finished Grid Search and training.'.format(time.time() - start_time))
+        RECORD_LOG('[{:.4f}s] Finished Grid Search and training.'.format(time.time() - start_time))
 
         # 5. See the CV result
         show_CV_result(reg, adjust_paras=adjust_para_list, classifi_scoring=cv_grid_params.scoring)
@@ -1048,26 +1110,19 @@ if __name__ == "__main__":
         predict_y, score_list = selfregressor_predict_and_score(reg, last_valida_df)
         validation_scores.loc["last_valida_df"] = score_list
         with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
-            record_log(LOCAL_FLAG, "对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
+            RECORD_LOG("对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
         last_valida_df['predict'] = predict_y
         # analysis_predict_result(last_valida_df)
 
         # 7. Predict and submit
         test_preds = reg.predict(test_df)
         test_preds = np.expm1(test_preds)
-        record_log(LOCAL_FLAG, '[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
-        submission = test_df[["test_id"]]
+        RECORD_LOG('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
+        submission = test_df[["test_id"]].copy()
         submission["price"] = test_preds
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
-        record_log(LOCAL_FLAG, '[{:.4f}s] Finished submission...'.format(time.time() - start_time))
+        RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
     else:
-        sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
-        print(sample_df.shape)
-        print(last_valida_df.shape)
-
-        cv_grid_params = CvGridParams()
-        adjust_para_list = print_param(cv_grid_params)
-        assert len(adjust_para_list) == 0
         cv_grid_params.rm_list_dict_params()
         regress_model = EmbLgbRegressor(data_reader=data_reader, **cv_grid_params.all_params)
 
@@ -1081,16 +1136,16 @@ if __name__ == "__main__":
         validation_scores.loc["last_valida_df"] = score_list
         with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
                                'display.height', None):
-            record_log(LOCAL_FLAG, "对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
+            RECORD_LOG("对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
         last_valida_df['predict'] = predict_y
 
         test_preds = regress_model.predict(test_df)
         test_preds = np.expm1(test_preds)
-        record_log(LOCAL_FLAG, '[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
-        submission = test_df[["test_id"]]
+        RECORD_LOG('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
+        submission = test_df[["test_id"]].copy()
         submission["price"] = test_preds
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
-        record_log(LOCAL_FLAG, '[{:.4f}s] Finished submission...'.format(time.time() - start_time))
+        RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
 
 
 

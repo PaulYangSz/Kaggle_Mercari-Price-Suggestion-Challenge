@@ -56,9 +56,6 @@ else:
     RNN_VERBOSE = 1
 
 
-USE_STACK = False
-
-
 if LOCAL_FLAG:
     def start_logging():
         # 加载前面的标准配置
@@ -114,11 +111,6 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.batch_size = batch_size
         self.lr_init = lr_init
         self.lr_final = lr_final
-
-        if USE_STACK:
-            self.ridge_lgm_models_list = self.get_ridge_lgm_models()
-
-            self.stack_last_model = Ridge(alpha=.6, copy_X=True, fit_intercept=False, max_iter=100, random_state=101, solver='auto', tol=0.01)
 
     def get_GRU_model(self, reader:DataReader):
         # Inputs
@@ -225,49 +217,6 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         history = self.emb_GRU_model.fit(keras_X, y, epochs=self.epochs, batch_size=self.batch_size, validation_split=0., # 0.01
                                          # callbacks=[TensorBoard('./logs/'+log_subdir)],
                                          verbose=RNN_VERBOSE)
-        if USE_STACK:
-            sparse_X = self.data_reader.get_ridge_sparse_data(X)
-            print('sparse_X.shape={}'.format(sparse_X.shape))
-            self.ridge_lgm_models_list[0].fit(sparse_X, y)
-            self.ridge_lgm_models_list[1].fit(sparse_X, y)
-            params = {
-                'learning_rate': 0.65,
-                'application': 'regression',
-                'max_depth': 3,
-                'num_leaves': 60,
-                'verbosity': -1,
-                'metric': 'RMSE',
-                'data_random_seed': 1,
-                'bagging_fraction': 0.5,
-                'nthread': 4
-            }
-
-            params2 = {
-                'learning_rate': 0.85,
-                'application': 'regression',
-                'max_depth': 3,
-                'num_leaves': 130,
-                'verbosity': -1,
-                'metric': 'RMSE',
-                'data_random_seed': 2,
-                'bagging_fraction': 1,
-                'nthread': 4
-            }
-            d_train = lgb.Dataset(sparse_X, label=y)
-            self.ridge_lgm_models_list[2] = lgb.train(params, train_set=d_train, num_boost_round=7500, valid_sets=d_train, verbose_eval=1000)
-            self.ridge_lgm_models_list[3] = lgb.train(params2, train_set=d_train, num_boost_round=6000, valid_sets=d_train, verbose_eval=500)
-
-            # For stacking
-            gru_y = self.emb_GRU_model.predict(keras_X)
-            gru_y = gru_y.reshape(gru_y.shape[0])
-            ridge1_y = self.ridge_lgm_models_list[0].predict(sparse_X)
-            ridge2_y = self.ridge_lgm_models_list[1].predict(sparse_X)
-            lgb1_y = self.ridge_lgm_models_list[2].predict(sparse_X)
-            lgb2_y = self.ridge_lgm_models_list[3].predict(sparse_X)
-            second_last_df = pd.DataFrame(data={'gru_y':gru_y, 'ridge1_y':ridge1_y, 'ridge2_y':ridge2_y, 'lgb1_y':lgb1_y, 'lgb2_y':lgb2_y},
-                                          columns=['gru_y', 'ridge1_y', 'ridge2_y', 'lgb1_y', 'lgb2_y'])
-            self.stack_last_model.fit(second_last_df, y)
-            RECORD_LOG("In this fold train get stack_last_model's coefficients: {}".format(self.stack_last_model.coef_))
 
         # Return the regressor
         return self
@@ -294,19 +243,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         gru_y = self.emb_GRU_model.predict(keras_X, batch_size=self.batch_size, verbose=RNN_VERBOSE)
         gru_y = gru_y.reshape(gru_y.shape[0])
 
-        if USE_STACK:
-            sparse_X = self.data_reader.get_ridge_sparse_data(X)
-            print('sparse_X.shape={}'.format(sparse_X.shape))
-            ridge1_y = self.ridge_lgm_models_list[0].predict(sparse_X)
-            ridge2_y = self.ridge_lgm_models_list[1].predict(sparse_X)
-            lgb1_y = self.ridge_lgm_models_list[2].predict(sparse_X)
-            lgb2_y = self.ridge_lgm_models_list[3].predict(sparse_X)
-
-            second_last_df = pd.DataFrame(data={'gru_y': gru_y, 'ridge1_y': ridge1_y, 'ridge2_y': ridge2_y, 'lgb1_y': lgb1_y, 'lgb2_y': lgb2_y},
-                                          columns=['gru_y', 'ridge1_y', 'ridge2_y', 'lgb1_y', 'lgb2_y'])
-            return self.stack_last_model.predict(X=second_last_df)
-        else:
-            return gru_y
+        return gru_y
 
 
 class CvGridParams(object):
@@ -479,9 +416,6 @@ if __name__ == "__main__":
 
     data_reader.del_redundant_cols()
 
-    # Begin prepare ridge&lgb data input
-    data_reader.train_ridge_numpy_data_condition()
-
     # EXTRACT DEVELOPMENT TEST
     sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
     last_valida_df.is_copy = None
@@ -518,7 +452,7 @@ if __name__ == "__main__":
         test_preds = reg.predict(test_df)
         test_preds = np.expm1(test_preds)
         RECORD_LOG('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
-        submission = test_df[["test_id"]]
+        submission = test_df[["test_id"]].copy()
         submission["price"] = test_preds
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))

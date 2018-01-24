@@ -51,7 +51,12 @@ if LOCAL_FLAG:
     sys.path.append(ROOT_Path)
     from ProjectCodes.model.DataReader import DataReader
     from ProjectCodes.model.DataReader import record_log
+    RNN_VERBOSE = 10
+else:
+    RNN_VERBOSE = 1
 
+
+if LOCAL_FLAG:
     def start_logging():
         # 加载前面的标准配置
         from ProjectCodes.logging_config import ConfigLogginfDict
@@ -85,10 +90,10 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         The labels passed during :meth:`fit`
     """
 
-    def __init__(self, data_reader:DataReader, name_emb_dim=15, item_desc_emb_dim=70, cat_name_emb_dim=20, brand_emb_dim=10,
-                 cat_main_emb_dim=10, cat_sub_emb_dim=10, cat_sub2_emb_dim=10, item_cond_id_emb_dim=5,
-                 GRU_layers_out_dim=(8, 16), drop_out_layers=(0.25, 0.1), dense_layers_dim=(512, 64),
-                 epochs=2, batch_size=512*3, lr_init=0.015, lr_final=0.007,
+    def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, cat_name_emb_dim=20, brand_emb_dim=10,
+                 cat_main_emb_dim=10, cat_sub_emb_dim=10, cat_sub2_emb_dim=10, item_cond_id_emb_dim=5, desc_len_dim=5, name_len_dim=5,
+                 GRU_layers_out_dim=(8, 16), drop_out_layers=(0.25, 0.1), dense_layers_dim=(128, 64),
+                 epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007,
                  lgb_num_leaves=100, lgb_max_depth=4, lgb_learning_rate=0.1, lgb_n_estimators=3000, lgb_min_split_gain=0.0,
                  lgb_min_child_weight=1e-3, lgb_min_child_samples=20, lgb_subsample=0.8, lgb_subsample_freq=1, lgb_colsample_bytree=0.8,
                  lgb_reg_alpha=0.0, lgb_reg_lambda=0.0, lgb_rand_state=20180122
@@ -102,6 +107,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         self.cat_sub_emb_dim = cat_sub_emb_dim
         self.cat_sub2_emb_dim = cat_sub2_emb_dim
         self.item_cond_id_emb_dim = item_cond_id_emb_dim
+        self.desc_len_dim = desc_len_dim
+        self.name_len_dim = name_len_dim
         self.GRU_layers_out_dim = GRU_layers_out_dim
         assert len(drop_out_layers) == len(dense_layers_dim)
         self.drop_out_layers = drop_out_layers
@@ -138,6 +145,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         category_sub2 = Input(shape=[1], name="category_sub2")
         brand = Input(shape=[1], name="brand")
         num_vars = Input(shape=[1], name="num_vars")
+        desc_len = Input(shape=[1], name="desc_len")
+        name_len = Input(shape=[1], name="name_len")
 
         # Embedding的作用是配置字典size和词向量len后，根据call参数的indices，返回词向量.
         #  类似TF的embedding_lookup
@@ -150,6 +159,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         emb_cat_sub = Embedding(reader.n_cat_sub, self.cat_sub_emb_dim)(category_sub)
         emb_cat_sub2 = Embedding(reader.n_cat_sub2, self.cat_sub2_emb_dim)(category_sub2)
         emb_brand = Embedding(reader.n_brand, self.brand_emb_dim)(brand)
+        emb_desc_len = Embedding(reader.n_desc_max_len, self.desc_len_dim)(desc_len)
+        emb_name_len = Embedding(reader.n_name_max_len, self.name_len_dim)(name_len)
 
         # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
         rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0], name='name_gru')(emb_name)
@@ -163,6 +174,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
                                    Flatten()(emb_cat_sub),
                                    Flatten()(emb_cat_sub2),
                                    Flatten()(emb_cond_id),
+                                   Flatten()(emb_desc_len),
+                                   Flatten()(emb_name_len),
                                    rnn_layer_name,
                                    rnn_layer_item_desc,
                                    # rnn_layer_cat_name,
@@ -177,10 +190,10 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         output = Dense(1, activation="linear")(main_layer)
 
         # model
-        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars],  # category_name
+        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars, desc_len, name_len],  # category_name
                       outputs=output)
         # optimizer = optimizers.RMSprop()
-        optimizer = optimizers.Adam()
+        optimizer = optimizers.Adam(lr=0.001, decay=0.0)
         model.compile(loss="mse", optimizer=optimizer)
         return model
 
@@ -225,7 +238,7 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         keras_X = self.data_reader.get_keras_dict_data(X)
         history = self.emb_GRU_model.fit(keras_X, y, epochs=self.epochs, batch_size=self.batch_size, validation_split=0., # 0.01
                                          # callbacks=[TensorBoard('./logs/'+log_subdir)],
-                                         verbose=10)
+                                         verbose=RNN_VERBOSE)
 
         if input_LGB_all_concat:
             lgb_X = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
@@ -295,21 +308,23 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'name_emb_dim': [15],  # In name each word's vector length
-                'item_desc_emb_dim': [70],
+                'name_emb_dim': [20],  # In name each word's vector length
+                'item_desc_emb_dim': [60],
                 'cat_name_emb_dim': [20],
                 'brand_emb_dim': [10],
                 'cat_main_emb_dim': [10],
                 'cat_sub_emb_dim': [10],
                 'cat_sub2_emb_dim': [10],
                 'item_cond_id_emb_dim': [5],
+                'desc_len_dim': [5],
+                'name_len_dim': [5],
                 'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units
-                'drop_out_layers': [(0.25, 0.1)],
-                'dense_layers_dim': [(512, 64)],
+                'drop_out_layers': [(0.1, 0.1, 0.1, 0.1)],
+                'dense_layers_dim': [(512, 256, 128, 64)],
                 'epochs': [2],
                 'batch_size': [512*3],
-                'lr_init': [0.015],
-                'lr_final': [0.007],
+                'lr_init': [0.005],
+                'lr_final': [0.001],
 
                 'lgb_num_leaves': [110],
                 'lgb_max_depth': [4],
@@ -359,7 +374,7 @@ def train_model_with_gridsearch(regress_model:EmbLgbRegressor, sample_df, cv_gri
 
     reg = GridSearchCV(estimator=regress_model,
                        param_grid=cv_grid_params.all_params,
-                       n_jobs=1,
+                       n_jobs=N_CORE,
                        cv=StratifiedKFold(n_splits=3, shuffle=True, random_state=cv_grid_params.rand_state),
                        scoring=cv_grid_params.scoring,
                        verbose=2,
@@ -441,7 +456,7 @@ if __name__ == "__main__":
     # cat_fill_type= "fill_paulnull" or "base_name" or "base_brand"
     # brand_fill_type= "fill_paulnull" or "base_other_cols" or "base_NB" or "base_GRU"
     # item_desc_fill_type= 'fill_' or 'fill_paulnull' or 'base_name'
-    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='base_name', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
+    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='base_other_cols', item_desc_fill_type='fill_paulnull')
     RECORD_LOG('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
     data_reader.del_redundant_cols()

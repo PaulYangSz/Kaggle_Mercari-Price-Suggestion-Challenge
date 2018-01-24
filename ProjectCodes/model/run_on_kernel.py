@@ -241,7 +241,7 @@ class DataReader():
             if pd.isnull(str_desc):
                 return replace
             else:
-                no_mean = re.compile(r"(No description yet|No description|\[rm\])", re.I)
+                no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
                 left = re.sub(pattern=no_mean, repl='', string=str_desc)
                 if len(left) > 2:
                     return left
@@ -259,17 +259,33 @@ class DataReader():
         else:
             print('【错误】：item_desc_fill_type should be: "fill_" or "fill_paulnull" or "base_name"')
 
-
-
-
-        # 以防brand的名字中含有正则表达式中的特殊字符，所以将其统统转换为"_". 目前不在这里做，在函数里面做，免得修改brand后匹配不上真正的
-        def rm_W_in_brand(str_brand):
-            if pd.isnull(str_brand):
-                return str_brand
+        # 统计下description中特殊字符的个数
+        def len_of_not_w(str_from):
+            if isinstance(str_from, str):
+                W_finder = re.compile('\W')
+                return len(W_finder.findall(str_from))
             else:
-                return re.sub(pattern="[\||^|$|?|+|*|#|!]", repl="_", string=str_brand)
-        # train_df.loc[:, 'brand_name'] = train_df['brand_name'].map(rm_W_in_brand)
-        # test_df.loc[:, 'brand_name'] = test_df['brand_name'].map(rm_W_in_brand)
+                return 0
+
+        # handling categorical variables
+        def wordCount(text):
+            try:
+                if text in ['No description yet', '', 'paulnull']:
+                    return 0
+                else:
+                    text = text.lower()
+                    words = [w for w in text.split(" ")]
+                    return len(words)
+            except:
+                return 0
+
+        train_df['desc_len'] = train_df['item_description'].apply(lambda x: wordCount(x))
+        test_df['desc_len'] = test_df['item_description'].apply(lambda x: wordCount(x))
+        train_df['name_len'] = train_df['name'].apply(lambda x: wordCount(x))
+        test_df['name_len'] = test_df['name'].apply(lambda x: wordCount(x))
+
+
+        # [先把能补充确定的brand填充上，然后再find brand]
         if brand_fill_type == 'fill_paulnull':
             train_df['brand_name'].fillna(value="paulnull", inplace=True)
             test_df['brand_name'].fillna(value="paulnull", inplace=True)
@@ -296,57 +312,83 @@ class DataReader():
             train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
             test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
             n_before = train_brand_null_index.size + test_brand_null_index.size
-            n_after = (train_df['brand_name'] == 'paulnull').sum() + (test_df['brand_name'] == 'paulnull').sum()
+            n_after = (train_df['brand_name']=='paulnull').sum() + (test_df['brand_name']=='paulnull').sum()
             record_log(local_flag, '直接name -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
             record_log(local_flag, '填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
 
-            col_key = 'item_description'
-            brand_start_time = time.time()
-            all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
-            have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
-            train_brand_null_index = train_df[train_df['brand_name']=='paulnull'].index
-            test_brand_null_index = test_df[test_df['brand_name']=='paulnull'].index
-            key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
-            train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
-            test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
-            n_before = train_brand_null_index.size + test_brand_null_index.size
-            n_after = (train_df['brand_name'] == 'paulnull').sum() + (test_df['brand_name'] == 'paulnull').sum()
-            record_log(local_flag, '直接desc -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
-            record_log(local_flag, '填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
+            # handling brand_name
+            all_brands = set(have_brand_df['brand_name'].values)
+            premissing = len(train_df.loc[train_df['brand_name'] == 'paulnull'])
 
-            col_key = 'name+cat'
-            brand_start_time = time.time()
-            train_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
-            test_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
-            train_df[col_key] = train_df.apply(lambda row: row['name'] + row['category_name'], axis=1)
-            test_df[col_key] = test_df.apply(lambda row: row['name'] + row['category_name'], axis=1)
-            all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
-            have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
-            train_brand_null_index = train_df[train_df['brand_name']=='paulnull'].index
-            test_brand_null_index = test_df[test_df['brand_name']=='paulnull'].index
-            key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
-            train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
-            test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
-            n_before = train_brand_null_index.size + test_brand_null_index.size
-            n_after = (train_df['brand_name'] == 'paulnull').sum() + (test_df['brand_name'] == 'paulnull').sum()
-            record_log(local_flag, 'name+cat -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
-            record_log(local_flag, '填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
+            def brandfinder(line):
+                """
+                如果name含有brand信息，那么就用name代替brand
+                :param line:
+                :return:
+                """
+                brand = line[0]
+                name = line[1]
+                namesplit = name.split(' ')
+                # TODO: 考虑下不管brand是否存在，都用name替换
+                if brand == 'paulnull':
+                    for x in namesplit:
+                        if x in all_brands:
+                            return name
+                if name in all_brands:
+                    return name
+                return brand
+            train_df['brand_name'] = train_df[['brand_name', 'name']].apply(brandfinder, axis=1)
+            test_df['brand_name'] = test_df[['brand_name', 'name']].apply(brandfinder, axis=1)
+            found = premissing - len(train_df.loc[train_df['brand_name'] == 'paulnull'])
+            record_log(local_flag, 'On train dataset brandfinder() fill: {}'.format(found))
 
-            col_key = 'desc+cat'
-            brand_start_time = time.time()
-            train_df[col_key] = train_df.apply(lambda row: row['item_description'] + row['category_name'], axis=1)
-            test_df[col_key] = test_df.apply(lambda row: row['item_description'] + row['category_name'], axis=1)
-            all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
-            have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
-            train_brand_null_index = train_df[train_df['brand_name']=='paulnull'].index
-            test_brand_null_index = test_df[test_df['brand_name']=='paulnull'].index
-            key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
-            train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
-            test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
-            n_before = train_brand_null_index.size + test_brand_null_index.size
-            n_after = (train_df['brand_name'] == 'paulnull').sum() + (test_df['brand_name'] == 'paulnull').sum()
-            record_log(local_flag, 'desc+cat -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
-            record_log(local_flag, '填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
+            # col_key = 'item_description'
+            # brand_start_time = time.time()
+            # all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
+            # have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
+            # train_brand_null_index = train_df[train_df['brand_name']=='paulnull'].index
+            # test_brand_null_index = test_df[test_df['brand_name']=='paulnull'].index
+            # key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
+            # train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
+            # test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
+            # n_before = train_brand_null_index.size + test_brand_null_index.size
+            # n_after = (train_df['brand_name'] == 'paulnull').sum() + (test_df['brand_name'] == 'paulnull').sum()
+            # record_log(local_flag, '直接desc -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
+            # record_log(local_flag, '填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
+            #
+            # col_key = 'name+cat'
+            # brand_start_time = time.time()
+            # train_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
+            # test_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
+            # train_df[col_key] = train_df.apply(lambda row: row['name'] + row['category_name'], axis=1)
+            # test_df[col_key] = test_df.apply(lambda row: row['name'] + row['category_name'], axis=1)
+            # all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
+            # have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
+            # train_brand_null_index = train_df[train_df['brand_name']=='paulnull'].index
+            # test_brand_null_index = test_df[test_df['brand_name']=='paulnull'].index
+            # key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
+            # train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
+            # test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
+            # n_before = train_brand_null_index.size + test_brand_null_index.size
+            # n_after = (train_df['brand_name'] == 'paulnull').sum() + (test_df['brand_name'] == 'paulnull').sum()
+            # record_log(local_flag, 'name+cat -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
+            # record_log(local_flag, '填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
+            #
+            # col_key = 'desc+cat'
+            # brand_start_time = time.time()
+            # train_df[col_key] = train_df.apply(lambda row: row['item_description'] + row['category_name'], axis=1)
+            # test_df[col_key] = test_df.apply(lambda row: row['item_description'] + row['category_name'], axis=1)
+            # all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
+            # have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
+            # train_brand_null_index = train_df[train_df['brand_name']=='paulnull'].index
+            # test_brand_null_index = test_df[test_df['brand_name']=='paulnull'].index
+            # key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
+            # train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
+            # test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
+            # n_before = train_brand_null_index.size + test_brand_null_index.size
+            # n_after = (train_df['brand_name'] == 'paulnull').sum() + (test_df['brand_name'] == 'paulnull').sum()
+            # record_log(local_flag, 'desc+cat -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
+            # record_log(local_flag, '填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
         else:
             print('【错误】：brand_fill_type should be: "fill_paulnull" or "base_other_cols" or "base_NB" or "base_GRU" ')
 
@@ -412,14 +454,14 @@ class DataReader():
         else:
             print('【错误】：cat_fill_type should be: "fill_paulnull" or "base_name" or "base_brand"')
 
-
-        # Split category_name -> 3 sub-classes
-        def change_df_split_cat(change_df:pd.DataFrame):
-            change_df.loc[:, 'cat_name_main'] = change_df.category_name.map(lambda x: split_cat_name(x, 'main'))
-            change_df.loc[:, 'cat_name_sub'] = change_df.category_name.map(lambda x: split_cat_name(x, 'sub'))
-            change_df.loc[:, 'cat_name_sub2'] = change_df.category_name.map(lambda x: split_cat_name(x, 'sub2'))
-        change_df_split_cat(train_df)
-        change_df_split_cat(test_df)
+        # splitting category_name into subcategories
+        def split_cat(text):
+            try:
+                return text.split("/")
+            except:
+                return ("No Label", "No Label", "No Label")
+        train_df['cat_name_main'], train_df['cat_name_sub'], train_df['cat_name_sub2'] = zip(*train_df['category_name'].apply(lambda x: split_cat(x)))
+        test_df['cat_name_main'], test_df['cat_name_sub'], test_df['cat_name_sub2'] = zip(*test_df['category_name'].apply(lambda x: split_cat(x)))
         record_log(local_flag, "\n初始化之后train_df的列有{}".format(train_df.columns))
         record_log(local_flag, "\n初始化之后test_df的列有{}".format(test_df.columns))
 
@@ -430,14 +472,22 @@ class DataReader():
         self.item_desc_seq_len = 0
         self.cat_name_seq_len = 0
         self.n_text_dict_words = 0
+        self.n_category = 0
         self.n_cat_main = 0
         self.n_cat_sub = 0
         self.n_cat_sub2 = 0
         self.n_brand = 0
         self.n_condition_id = 0
+        self.n_name_max_len = 0
+        self.n_desc_max_len = 0
 
     def le_encode(self):
         le = LabelEncoder()  # 给字符串或者其他对象编码, 从0开始编码
+
+        # LabelEncoder cat-name
+        le.fit(np.hstack([self.train_df['category_name'], self.test_df['category_name']]))
+        self.train_df['category_le'] = le.transform(self.train_df['category_name'])
+        self.test_df['category_le'] = le.transform(self.test_df['category_name'])
 
         # LabelEncoder cat_main & cat_sub & cat_sub2
         le.fit(np.hstack([self.train_df['cat_name_main'], self.test_df['cat_name_main']]))
@@ -454,7 +504,7 @@ class DataReader():
         le.fit(np.hstack([self.train_df['brand_name'], self.test_df['brand_name']]))
         self.train_df['brand_le'] = le.transform(self.train_df['brand_name'])
         self.test_df['brand_le'] = le.transform(self.test_df['brand_name'])
-        # del le, self.train_df['brand_name'], self.test_df['brand_name']
+        del le#, self.train_df['brand_name'], self.test_df['brand_name']
 
         record_log(self.local_flag, "\nLabelEncoder之后train_df的列有{}".format(self.train_df.columns))
         record_log(self.local_flag, "\nLabelEncoder之后test_df的列有{}".format(self.test_df.columns))
@@ -466,7 +516,11 @@ class DataReader():
         tok_raw = Tokenizer()  # 分割文本成词，然后将词转成编码(先分词，后编码, 编码从1开始)
         # 这里构成raw文本的时候没有加入test数据是因为就算test中有新出现的词也不会在后续训练中改变词向量
         raw_text = np.hstack([self.train_df['item_description'].str.lower(),
-                              self.train_df['name'].str.lower()])
+                              self.test_df['item_description'].str.lower(),
+                              self.train_df['category_name'].str.lower(),
+                              self.test_df['category_name'].str.lower(),
+                              self.train_df['name'].str.lower(),
+                              self.test_df['name'].str.lower()])
         tok_raw.fit_on_texts(raw_text)
         self.n_text_dict_words = max(tok_raw.word_index.values()) + 2
 
@@ -477,13 +531,15 @@ class DataReader():
         self.train_df["desc_int_seq"] = tok_raw.texts_to_sequences(self.train_df.item_description.str.lower())
         self.test_df["desc_int_seq"] = tok_raw.texts_to_sequences(self.test_df.item_description.str.lower())
 
+        del tok_raw
+
         record_log(self.local_flag, "\ntexts_to_sequences之后train_df的列有{}".format(self.train_df.columns))
         record_log(self.local_flag, "\ntexts_to_sequences之后test_df的列有{}".format(self.test_df.columns))
 
     def ensure_fixed_value(self):
-        self.name_seq_len = 20  # 最长17个词
-        self.item_desc_seq_len = 60  # 最长269个词，90%在62个词以内
-        self.cat_name_seq_len = 20 # 最长8个词
+        self.name_seq_len = 10  # 最长17个词
+        self.item_desc_seq_len = 75  # 最长269个词，90%在62个词以内
+        self.cat_name_seq_len = 8 # 最长8个词
         if self.n_text_dict_words == 0:
             self.n_text_dict_words = np.max([self.train_df.name_int_seq.map(max).max(),
                                              self.test_df.name_int_seq.map(max).max(),
@@ -491,11 +547,14 @@ class DataReader():
                                              # self.test_df.cat_int_seq.map(max).max(),
                                              self.train_df.desc_int_seq.map(max).max(),
                                              self.test_df.desc_int_seq.map(max).max()]) + 2
+        self.n_category = np.max([self.train_df.category_le.max(), self.test_df.category_le.max()]) + 1
         self.n_cat_main = np.max([self.train_df.cat_main_le.max(), self.test_df.cat_main_le.max()]) + 1  # LE编码后最大值+1
         self.n_cat_sub = np.max([self.train_df.cat_sub_le.max(), self.test_df.cat_sub_le.max()]) + 1
         self.n_cat_sub2 = np.max([self.train_df.cat_sub2_le.max(), self.test_df.cat_sub2_le.max()]) + 1
         self.n_brand = np.max([self.train_df.brand_le.max(), self.test_df.brand_le.max()])+1
         self.n_condition_id = np.max([self.train_df.item_condition_id.max(), self.test_df.item_condition_id.max()])+1
+        self.n_desc_max_len = np.max([self.train_df.desc_len.max(), self.test_df.desc_len.max()]) + 1
+        self.n_name_max_len = np.max([self.train_df.name_len.max(), self.test_df.name_len.max()]) + 1
 
     def split_get_train_validation(self):
         """
@@ -520,19 +579,21 @@ class DataReader():
             'name': pad_sequences(dataset['name_int_seq'], maxlen=self.name_seq_len),
             'item_desc': pad_sequences(dataset.desc_int_seq, maxlen=self.item_desc_seq_len),
             'brand': np.array(dataset.brand_le),
+            'category': np.array(dataset.category_le),
             'category_main': np.array(dataset.cat_main_le),
             'category_sub': np.array(dataset.cat_sub_le),
             'category_sub2': np.array(dataset.cat_sub2_le),
-            # 'category_name': pad_sequences(dataset.cat_int_seq, maxlen=self.cat_name_seq_len),
             'item_condition': np.array(dataset.item_condition_id),
-            'num_vars': np.array(dataset[['shipping']])
+            'num_vars': np.array(dataset[['shipping']]),
+            'desc_len': np.array(dataset[["desc_len"]]),
+            'name_len': np.array(dataset[["name_len"]]),
         }
         return X
 
     def del_redundant_cols(self):
-        useful_cols = ['train_id', 'test_id', 'name', 'item_condition_id', 'brand_name', 'price', 'shipping', 'item_description',
-                       'cat_name_main', 'cat_name_sub', 'cat_name_sub2', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le',
-                       'brand_le', 'name_int_seq', 'desc_int_seq']
+        useful_cols = ['train_id', 'test_id', 'name', 'item_condition_id', 'category_name', 'brand_name', 'price', 'shipping', 'item_description',
+                       'category_le', 'cat_name_main', 'cat_name_sub', 'cat_name_sub2', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le',
+                       'brand_le', 'name_int_seq', 'desc_int_seq', 'desc_len', 'name_len']
         for col in self.train_df.columns:
             if col not in useful_cols:
                 del self.train_df[col]
@@ -662,7 +723,12 @@ if LOCAL_FLAG:
     sys.path.append(ROOT_Path)
     from ProjectCodes.model.DataReader import DataReader
     from ProjectCodes.model.DataReader import record_log
+    RNN_VERBOSE = 10
+else:
+    RNN_VERBOSE = 1
 
+
+if LOCAL_FLAG:
     def start_logging():
         # 加载前面的标准配置
         from ProjectCodes.logging_config import ConfigLogginfDict
@@ -675,13 +741,10 @@ if LOCAL_FLAG:
     if 'Logger' not in dir():
         Logger = start_logging()
 
-input_LGB_all_concat = False
-
-
 RECORD_LOG = lambda log_str: record_log(LOCAL_FLAG, log_str)
 
 
-class EmbLgbRegressor(BaseEstimator, RegressorMixin):
+class SelfLocalRegressor(BaseEstimator, RegressorMixin):
     """ An sklearn-API regressor.
     Model 1: Embedding GRU ---- Embedding(text or cat) -> Concat[GRU(words) or Flatten(cat_vector)] ->  Dense -> Output
     Parameters
@@ -696,14 +759,10 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         The labels passed during :meth:`fit`
     """
 
-    def __init__(self, data_reader:DataReader, name_emb_dim=15, item_desc_emb_dim=70, cat_name_emb_dim=20, brand_emb_dim=10,
-                 cat_main_emb_dim=10, cat_sub_emb_dim=10, cat_sub2_emb_dim=10, item_cond_id_emb_dim=5,
-                 GRU_layers_out_dim=(8, 16), drop_out_layers=(0.25, 0.1), dense_layers_dim=(512, 64),
-                 epochs=2, batch_size=512*3, lr_init=0.015, lr_final=0.007,
-                 lgb_num_leaves=100, lgb_max_depth=4, lgb_learning_rate=0.1, lgb_n_estimators=3000, lgb_min_split_gain=0.0,
-                 lgb_min_child_weight=1e-3, lgb_min_child_samples=20, lgb_subsample=0.8, lgb_subsample_freq=1, lgb_colsample_bytree=0.8,
-                 lgb_reg_alpha=0.0, lgb_reg_lambda=0.0, lgb_rand_state=20180122
-                 ):
+    def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, cat_name_emb_dim=20, brand_emb_dim=10,
+                 cat_main_emb_dim=10, cat_sub_emb_dim=10, cat_sub2_emb_dim=10, item_cond_id_emb_dim=5, desc_len_dim=5, name_len_dim=5,
+                 GRU_layers_out_dim=(8, 16), drop_out_layers=(0.25, 0.1), dense_layers_dim=(128, 64),
+                 epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007):
         self.data_reader = data_reader
         self.name_emb_dim = name_emb_dim
         self.item_desc_emb_dim = item_desc_emb_dim
@@ -713,6 +772,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         self.cat_sub_emb_dim = cat_sub_emb_dim
         self.cat_sub2_emb_dim = cat_sub2_emb_dim
         self.item_cond_id_emb_dim = item_cond_id_emb_dim
+        self.desc_len_dim = desc_len_dim
+        self.name_len_dim = name_len_dim
         self.GRU_layers_out_dim = GRU_layers_out_dim
         assert len(drop_out_layers) == len(dense_layers_dim)
         self.drop_out_layers = drop_out_layers
@@ -722,21 +783,6 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         self.batch_size = batch_size
         self.lr_init = lr_init
         self.lr_final = lr_final
-
-        self.lgb_num_leaves = lgb_num_leaves
-        self.lgb_max_depth = lgb_max_depth
-        self.lgb_learning_rate = lgb_learning_rate
-        self.lgb_n_estimators = lgb_n_estimators
-        self.lgb_min_split_gain = lgb_min_split_gain
-        self.lgb_min_child_weight = lgb_min_child_weight
-        self.lgb_min_child_samples = lgb_min_child_samples
-        self.lgb_subsample = lgb_subsample
-        self.lgb_subsample_freq = lgb_subsample_freq
-        self.lgb_colsample_bytree = lgb_colsample_bytree
-        self.lgb_reg_alpha = lgb_reg_alpha
-        self.lgb_reg_lambda = lgb_reg_lambda
-        self.lgb_rand_state = lgb_rand_state
-        self.lgb_model = None
 
     def get_GRU_model(self, reader:DataReader):
         # Inputs
@@ -749,6 +795,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         category_sub2 = Input(shape=[1], name="category_sub2")
         brand = Input(shape=[1], name="brand")
         num_vars = Input(shape=[1], name="num_vars")
+        desc_len = Input(shape=[1], name="desc_len")
+        name_len = Input(shape=[1], name="name_len")
 
         # Embedding的作用是配置字典size和词向量len后，根据call参数的indices，返回词向量.
         #  类似TF的embedding_lookup
@@ -761,25 +809,27 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         emb_cat_sub = Embedding(reader.n_cat_sub, self.cat_sub_emb_dim)(category_sub)
         emb_cat_sub2 = Embedding(reader.n_cat_sub2, self.cat_sub2_emb_dim)(category_sub2)
         emb_brand = Embedding(reader.n_brand, self.brand_emb_dim)(brand)
+        emb_desc_len = Embedding(reader.n_desc_max_len, self.desc_len_dim)(desc_len)
+        emb_name_len = Embedding(reader.n_name_max_len, self.name_len_dim)(name_len)
 
         # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
-        rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0], name='name_gru')(emb_name)
-        rnn_layer_item_desc = GRU(units=self.GRU_layers_out_dim[1], name='item_desc_gru')(emb_item_desc)  # rnn_layer_item_desc.shape=[None, 16]
+        rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0])(emb_name)
+        rnn_layer_item_desc = GRU(units=self.GRU_layers_out_dim[1])(emb_item_desc)  # rnn_layer_item_desc.shape=[None, 16]
         # rnn_layer_cat_name = GRU(units=self.GRU_layers_out_dim[2])(emb_category_name)
 
         # main layer
         # 连接列表中的Tensor，按照axis组成一个大的Tensor
-        concat_layer = concatenate([Flatten()(emb_brand),  # [None, 1, 10] -> [None, 10]
-                                   Flatten()(emb_cat_main),
-                                   Flatten()(emb_cat_sub),
-                                   Flatten()(emb_cat_sub2),
-                                   Flatten()(emb_cond_id),
-                                   rnn_layer_name,
-                                   rnn_layer_item_desc,
-                                   # rnn_layer_cat_name,
-                                   num_vars],
-                                   name='concat_layer')
-        main_layer = concat_layer
+        main_layer = concatenate([Flatten()(emb_brand),  # [None, 1, 10] -> [None, 10]
+                                  Flatten()(emb_cat_main),
+                                  Flatten()(emb_cat_sub),
+                                  Flatten()(emb_cat_sub2),
+                                  Flatten()(emb_cond_id),
+                                  Flatten()(emb_desc_len),
+                                  Flatten()(emb_name_len),
+                                  rnn_layer_name,
+                                  rnn_layer_item_desc,
+                                  # rnn_layer_cat_name,
+                                  num_vars])
         # Concat[all] -> Dense1 -> ... -> DenseN
         for i in range(len(self.dense_layers_dim)):
             main_layer = Dropout(self.drop_out_layers[i])(Dense(self.dense_layers_dim[i], activation='relu')(main_layer))
@@ -788,18 +838,20 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         output = Dense(1, activation="linear")(main_layer)
 
         # model
-        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars],  # category_name
+        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars, desc_len, name_len],  # category_name
                       outputs=output)
         # optimizer = optimizers.RMSprop()
-        optimizer = optimizers.Adam()
+        optimizer = optimizers.Adam(lr=0.001, decay=0.0)
         model.compile(loss="mse", optimizer=optimizer)
         return model
 
-    def get_GRU_interlayer_out(self, trained_gru_model:Model, layer_name:str, input_data):
-        intermediate_layer_model = Model(inputs=trained_gru_model.input,
-                                         outputs=trained_gru_model.get_layer(layer_name).output)
-        intermediate_output = intermediate_layer_model.predict(input_data)
-        return intermediate_output
+    def get_ridge_lgm_models(self):
+        ridge1 = Ridge(alpha=.6, copy_X=True, fit_intercept=True, max_iter=100, normalize=False, random_state=101, solver='auto', tol=0.01)
+        ridge2 = Ridge(solver='sag', fit_intercept=True)
+        lgb1 = None
+        lgb2 = None
+        return [ridge1, ridge2, lgb1, lgb2]
+
 
     def fit(self, X, y):
         """A reference implementation of a fitting function for a regressor.
@@ -836,31 +888,7 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         keras_X = self.data_reader.get_keras_dict_data(X)
         history = self.emb_GRU_model.fit(keras_X, y, epochs=self.epochs, batch_size=self.batch_size, validation_split=0., # 0.01
                                          # callbacks=[TensorBoard('./logs/'+log_subdir)],
-                                         verbose=10)
-
-        if input_LGB_all_concat:
-            lgb_X = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
-            print('interlayer_output: type={}, shape = {}'.format(type(lgb_X), lgb_X.shape))
-        else:
-            name_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='name_gru', input_data=keras_X)
-            item_desc_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='item_desc_gru', input_data=keras_X)
-            other_le_feats = X[['brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']].values
-            print("prepare lgb_X,", name_gru_encode.shape, item_desc_gru_encode.shape, other_le_feats.shape)
-            lgb_X = np.hstack((name_gru_encode, item_desc_gru_encode, other_le_feats))
-        self.lgb_model = lgb.LGBMRegressor(num_leaves=self.lgb_num_leaves,
-                                           max_depth=self.lgb_max_depth,
-                                           learning_rate=self.lgb_learning_rate,
-                                           n_estimators=self.lgb_n_estimators,
-                                           min_split_gain=self.lgb_min_split_gain,
-                                           min_child_weight=self.lgb_min_child_weight,
-                                           min_child_samples=self.lgb_min_child_samples,
-                                           subsample=self.lgb_subsample,
-                                           subsample_freq=self.lgb_subsample_freq,
-                                           colsample_bytree=self.lgb_colsample_bytree,
-                                           reg_alpha=self.lgb_reg_alpha,
-                                           reg_lambda=self.lgb_reg_lambda,
-                                           random_state=self.lgb_rand_state)
-        self.lgb_model.fit(lgb_X, y)
+                                         verbose=RNN_VERBOSE)
 
         # Return the regressor
         return self
@@ -884,18 +912,10 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         # X = check_array(X)  # ValueError: setting an array element with a sequence. This is caused by "XXX_seq"
 
         keras_X = self.data_reader.get_keras_dict_data(X)
+        gru_y = self.emb_GRU_model.predict(keras_X, batch_size=self.batch_size, verbose=RNN_VERBOSE)
+        gru_y = gru_y.reshape(gru_y.shape[0])
 
-        if input_LGB_all_concat:
-            lgb_X = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
-            print('interlayer_output: type={}, shape = {}'.format(type(lgb_X), lgb_X.shape))
-        else:
-            name_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='name_gru', input_data=keras_X)
-            item_desc_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='item_desc_gru', input_data=keras_X)
-            other_le_feats = X[['brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']].values
-            print("prepare lgb_X,", name_gru_encode.shape, item_desc_gru_encode.shape, other_le_feats.shape)
-            lgb_X = np.hstack((name_gru_encode, item_desc_gru_encode, other_le_feats))
-
-        return self.lgb_model.predict(lgb_X)
+        return gru_y
 
 
 class CvGridParams(object):
@@ -906,35 +926,23 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'name_emb_dim': [15],  # In name each word's vector length
-                'item_desc_emb_dim': [70],
+                'name_emb_dim': [20],  # In name each word's vector length
+                'item_desc_emb_dim': [60],
                 'cat_name_emb_dim': [20],
                 'brand_emb_dim': [10],
                 'cat_main_emb_dim': [10],
                 'cat_sub_emb_dim': [10],
                 'cat_sub2_emb_dim': [10],
                 'item_cond_id_emb_dim': [5],
+                'desc_len_dim': [5],
+                'name_len_dim': [5],
                 'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units
-                'drop_out_layers': [(0.25, 0.1)],
-                'dense_layers_dim': [(512, 64)],
+                'drop_out_layers': [(0.1, 0.1, 0.1, 0.1)],
+                'dense_layers_dim': [(512, 256, 128, 64)],
                 'epochs': [2],
                 'batch_size': [512*3],
-                'lr_init': [0.015],
-                'lr_final': [0.007],
-
-                'lgb_num_leaves': [110],
-                'lgb_max_depth': [4],
-                'lgb_learning_rate': [0.5],
-                'lgb_n_estimators': [3000],
-                'lgb_min_split_gain': [0.0],
-                'lgb_min_child_weight': [1e-3],
-                'lgb_min_child_samples': [20],
-                'lgb_subsample': [0.8],
-                'lgb_subsample_freq': [1],
-                'lgb_colsample_bytree': [0.8],
-                'lgb_reg_alpha': [0.0],
-                'lgb_reg_lambda': [0.0],
-                'lgb_rand_state': [self.rand_state],
+                'lr_init': [0.005],
+                'lr_final': [0.001],
             }
         else:
             print("Construct CvGridParams with error param_type: " + param_type)
@@ -959,9 +967,8 @@ def print_param(cv_grid_params:CvGridParams):
     return search_param_list
 
 
-def train_model_with_gridsearch(regress_model:EmbLgbRegressor, sample_df, cv_grid_params:CvGridParams):
+def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_grid_params):
     sample_X = sample_df.drop('target', axis=1)
-    print('sample_X.cols={}'.format(sample_X.columns))
     # sample_X = sample_X[['name_int_seq', 'desc_int_seq', 'brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']]  # , 'cat_int_seq'
     sample_y = sample_df['target']
 
@@ -970,7 +977,7 @@ def train_model_with_gridsearch(regress_model:EmbLgbRegressor, sample_df, cv_gri
 
     reg = GridSearchCV(estimator=regress_model,
                        param_grid=cv_grid_params.all_params,
-                       n_jobs=1,
+                       n_jobs=N_CORE,
                        cv=StratifiedKFold(n_splits=3, shuffle=True, random_state=cv_grid_params.rand_state),
                        scoring=cv_grid_params.scoring,
                        verbose=2,
@@ -1028,12 +1035,12 @@ def show_CV_result(reg:GridSearchCV, adjust_paras, classifi_scoring):
         plt.show()
 
 
-def selfregressor_predict_and_score(reg, valida_df):
+def selfregressor_predict_and_score(reg, last_valida_df):
     print('对样本集中留出的验证集进行预测:')
-    verify_X = valida_df.drop('target', axis=1)
+    verify_X = last_valida_df.drop('target', axis=1)
     predict_ = reg.predict(verify_X)
     # print(predict_)
-    verify_golden = valida_df['target'].values
+    verify_golden = last_valida_df['target'].values
     explained_var_score = explained_variance_score(y_true=verify_golden, y_pred=predict_)
     mean_abs_error = mean_absolute_error(y_true=verify_golden, y_pred=predict_)
     mean_sqr_error = mean_squared_error(y_true=verify_golden, y_pred=predict_)
@@ -1052,7 +1059,7 @@ if __name__ == "__main__":
     # cat_fill_type= "fill_paulnull" or "base_name" or "base_brand"
     # brand_fill_type= "fill_paulnull" or "base_other_cols" or "base_NB" or "base_GRU"
     # item_desc_fill_type= 'fill_' or 'fill_paulnull' or 'base_name'
-    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='base_name', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
+    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='base_other_cols', item_desc_fill_type='fill_paulnull')
     RECORD_LOG('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
     data_reader.del_redundant_cols()
@@ -1083,9 +1090,9 @@ if __name__ == "__main__":
 
     # EXTRACT DEVELOPMENT TEST
     sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
+    last_valida_df.is_copy = None
     print(sample_df.shape)
     print(last_valida_df.shape)
-    last_valida_df.is_copy = None
 
     # 2. Check self-made estimator
     # check_estimator(LocalRegressor)  # Can not pass because need default DataReader in __init__.
@@ -1095,9 +1102,8 @@ if __name__ == "__main__":
     adjust_para_list = print_param(cv_grid_params)
 
     if len(adjust_para_list) > 0:
-
         # 4. Use GridSearchCV to tuning model.
-        regress_model = EmbLgbRegressor(data_reader=data_reader)
+        regress_model = SelfLocalRegressor(data_reader=data_reader)
         print('Begin to train self-defined sklearn-API regressor.')
         reg = train_model_with_gridsearch(regress_model, sample_df, cv_grid_params)
         RECORD_LOG('[{:.4f}s] Finished Grid Search and training.'.format(time.time() - start_time))
@@ -1118,24 +1124,24 @@ if __name__ == "__main__":
         test_preds = reg.predict(test_df)
         test_preds = np.expm1(test_preds)
         RECORD_LOG('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
-        submission = test_df[["test_id"]].copy()
+        submission = test_df[["test_id"]]
         submission["price"] = test_preds
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
     else:
         cv_grid_params.rm_list_dict_params()
-        regress_model = EmbLgbRegressor(data_reader=data_reader, **cv_grid_params.all_params)
+        regress_model = SelfLocalRegressor(data_reader=data_reader, **cv_grid_params.all_params)
 
         train_X = sample_df.drop('target', axis=1)
         train_y = sample_df['target'].values
         regress_model.fit(train_X, train_y)
 
         # 6. Use Trained Regressor to predict the last validation dataset
-        validation_scores = pd.DataFrame(columns=["explained_var_score", "mean_abs_error", "mean_sqr_error", "median_abs_error", "r2score"])
+        validation_scores = pd.DataFrame(
+            columns=["explained_var_score", "mean_abs_error", "mean_sqr_error", "median_abs_error", "r2score"])
         predict_y, score_list = selfregressor_predict_and_score(regress_model, last_valida_df)
         validation_scores.loc["last_valida_df"] = score_list
-        with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
-                               'display.height', None):
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
             RECORD_LOG("对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
         last_valida_df['predict'] = predict_y
 
@@ -1144,7 +1150,8 @@ if __name__ == "__main__":
         RECORD_LOG('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
         submission = test_df[["test_id"]].copy()
         submission["price"] = test_preds
-        submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
+        submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]),
+                          index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
 
 

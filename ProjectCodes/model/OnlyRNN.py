@@ -127,6 +127,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         num_vars = Input(shape=[1], name="num_vars")
         desc_len = Input(shape=[1], name="desc_len")
         name_len = Input(shape=[1], name="name_len")
+        desc_W_len = Input(shape=[1], name="desc_W_len")
 
         # Embedding的作用是配置字典size和词向量len后，根据call参数的indices，返回词向量.
         #  类似TF的embedding_lookup
@@ -141,6 +142,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         emb_brand = Embedding(reader.n_brand, self.brand_emb_dim)(brand)
         emb_desc_len = Embedding(reader.n_desc_max_len, self.desc_len_dim)(desc_len)
         emb_name_len = Embedding(reader.n_name_max_len, self.name_len_dim)(name_len)
+        emb_desc_W_len = Embedding(reader.n_desc_W_max_len, self.desc_len_dim)(desc_W_len)
 
         # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
         rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0])(emb_name)
@@ -168,7 +170,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         output = Dense(1, activation="linear")(main_layer)
 
         # model
-        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars, desc_len, name_len],  # category_name
+        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars, desc_len, name_len, desc_W_len],  # category_name
                       outputs=output)
         # optimizer = optimizers.RMSprop()
         optimizer = optimizers.Adam(lr=0.001, decay=0.0)

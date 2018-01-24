@@ -539,6 +539,7 @@ class DataReader():
         record_log(self.local_flag, "\ntexts_to_sequences之后test_df的列有{}".format(self.test_df.columns))
 
     def ensure_fixed_value(self):
+        # TODO: 序列长度参数可调
         self.name_seq_len = 10  # 最长17个词
         self.item_desc_seq_len = 75  # 最长269个词，90%在62个词以内
         self.cat_name_seq_len = 8 # 最长8个词

@@ -31,6 +31,8 @@ import logging
 import logging.config
 import lightgbm as lgb
 
+np.random.seed(123)
+
 if platform.system() == 'Windows':
     N_CORE = 1
     LOCAL_FLAG = True
@@ -544,8 +546,8 @@ if __name__ == "__main__":
         RECORD_LOG('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
         submission = test_df[["test_id"]].copy()
         submission["price"] = test_preds
-        submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]),
-                          index=False)
+        file_path = './csv_output/' if LOCAL_FLAG else './'
+        submission.to_csv(file_path + "self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
 
 

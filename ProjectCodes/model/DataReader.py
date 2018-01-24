@@ -21,6 +21,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from keras.preprocessing.text import Tokenizer
 
+np.random.seed(123)
+
 
 if platform.system() == 'Windows':
     N_CORE = 1

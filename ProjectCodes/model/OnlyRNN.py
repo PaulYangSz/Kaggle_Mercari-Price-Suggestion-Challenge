@@ -158,6 +158,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
                                   Flatten()(emb_cond_id),
                                   Flatten()(emb_desc_len),
                                   Flatten()(emb_name_len),
+                                  Flatten()(emb_desc_W_len),
                                   rnn_layer_name,
                                   rnn_layer_item_desc,
                                   # rnn_layer_cat_name,
@@ -176,13 +177,6 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         optimizer = optimizers.Adam(lr=0.001, decay=0.0)
         model.compile(loss="mse", optimizer=optimizer)
         return model
-
-    def get_ridge_lgm_models(self):
-        ridge1 = Ridge(alpha=.6, copy_X=True, fit_intercept=True, max_iter=100, normalize=False, random_state=101, solver='auto', tol=0.01)
-        ridge2 = Ridge(solver='sag', fit_intercept=True)
-        lgb1 = None
-        lgb2 = None
-        return [ridge1, ridge2, lgb1, lgb2]
 
 
     def fit(self, X, y):
@@ -391,7 +385,7 @@ if __name__ == "__main__":
     # cat_fill_type= "fill_paulnull" or "base_name" or "base_brand"
     # brand_fill_type= "fill_paulnull" or "base_other_cols" or "base_NB" or "base_GRU"
     # item_desc_fill_type= 'fill_' or 'fill_paulnull' or 'base_name'
-    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='base_other_cols', item_desc_fill_type='fill_paulnull')
+    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
     RECORD_LOG('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
     data_reader.del_redundant_cols()

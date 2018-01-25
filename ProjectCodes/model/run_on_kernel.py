@@ -1059,7 +1059,7 @@ if __name__ == "__main__":
     # cat_fill_type= "fill_paulnull" or "base_name" or "base_brand"
     # brand_fill_type= "fill_paulnull" or "base_other_cols" or "base_NB" or "base_GRU"
     # item_desc_fill_type= 'fill_' or 'fill_paulnull' or 'base_name'
-    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='base_other_cols', item_desc_fill_type='fill_paulnull')
+    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
     RECORD_LOG('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
     data_reader.del_redundant_cols()

@@ -261,6 +261,8 @@ class DataReader():
         else:
             print('【错误】：item_desc_fill_type should be: "fill_" or "fill_paulnull" or "base_name"')
 
+        desc_tv = TfidfVectorizer(ngram_range=(1, 3), max_features=100000)  # stop_words='english'
+
         # 统计下description中特殊字符的个数
         def len_of_not_w(str_from):
             if isinstance(str_from, str):

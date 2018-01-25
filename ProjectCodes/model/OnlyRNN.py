@@ -212,9 +212,13 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
 
         # print('~~~~~~~~~~~~In fit() type(X): {}'.format(type(X)))
         keras_X = self.data_reader.get_keras_dict_data(X)
+        keras_fit_start = time.time()
         history = self.emb_GRU_model.fit(keras_X, y, epochs=self.epochs, batch_size=self.batch_size, validation_split=0., # 0.01
                                          # callbacks=[TensorBoard('./logs/'+log_subdir)],
                                          verbose=RNN_VERBOSE)
+        RECORD_LOG('[self.emb_GRU_model.fit] cost {:.4f}s'.format(time.time() - keras_fit_start))
+        if LOCAL_FLAG:
+            print('[self.emb_GRU_model.fit] cost {:.4f}s'.format(time.time() - keras_fit_start))
 
         # Return the regressor
         return self

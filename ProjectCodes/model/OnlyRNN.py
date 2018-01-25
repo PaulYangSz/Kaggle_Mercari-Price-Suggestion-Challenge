@@ -16,7 +16,7 @@ from sklearn.linear_model import Ridge
 from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, median_absolute_error
 from sklearn.metrics import r2_score
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import train_test_split
 from sklearn.utils.estimator_checks import check_estimator
@@ -256,9 +256,9 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'name_emb_dim': [20],  # In name each word's vector length
+                'name_emb_dim': [20, 15, 25],  # In name each word's vector length
                 'item_desc_emb_dim': [60],
-                'cat_name_emb_dim': [20],
+                # 'cat_name_emb_dim': [20],
                 'brand_emb_dim': [10],
                 'cat_main_emb_dim': [10],
                 'cat_sub_emb_dim': [10],
@@ -308,7 +308,7 @@ def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_
     reg = GridSearchCV(estimator=regress_model,
                        param_grid=cv_grid_params.all_params,
                        n_jobs=N_CORE,
-                       cv=StratifiedKFold(n_splits=3, shuffle=True, random_state=cv_grid_params.rand_state),
+                       cv=KFold(n_splits=7, shuffle=True, random_state=cv_grid_params.rand_state),
                        scoring=cv_grid_params.scoring,
                        verbose=2,
                        refit=True)

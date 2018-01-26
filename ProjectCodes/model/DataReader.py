@@ -258,26 +258,6 @@ class DataReader():
             print('【错误】：item_desc_fill_type should be: "fill_" or "fill_paulnull" or "base_name"')
 
 
-        # All Tf-IDF sum()
-        idf_sum_start = time.time()
-        all_df = pd.concat([train_df, test_df]).reset_index(drop=True)[test_df.columns]
-        desc_tv = TfidfVectorizer(ngram_range=(1, 2), max_features=100000)  # stop_words='english'
-        desc_tv.fit(all_df['item_description'])
-        train_df['desc_idf_sum'] = desc_tv.transform(train_df['item_description']).sum(axis=1)
-        test_df['desc_idf_sum'] = desc_tv.transform(test_df['item_description']).sum(axis=1)
-        split_value_bins = list(train_df['desc_idf_sum'].quantile([q/300 for q in range(1, 300)]).values)
-        def float_to_category(value):
-            i = 0
-            for split_v in split_value_bins:
-                if value < split_v:
-                    return i
-                i += 1
-            return i
-        # train_df['desc_idf_sum'] = train_df['desc_idf_sum'].map(float_to_category)
-        # test_df['desc_idf_sum'] = test_df['desc_idf_sum'].map(float_to_category)
-        print('Calc ["desc_idf_sum"] cost {}s'.format(time.time() - idf_sum_start))
-
-
         # 统计下description中特殊字符的个数
         def len_of_not_w(str_from):
             if isinstance(str_from, str):
@@ -302,8 +282,8 @@ class DataReader():
         test_df['desc_len'] = test_df['item_description'].apply(lambda x: wordCount(x))
         train_df['name_len'] = train_df['name'].apply(lambda x: wordCount(x))
         test_df['name_len'] = test_df['name'].apply(lambda x: wordCount(x))
-        train_df['desc_W_len'] = train_df['item_description'].map(len_of_not_w)
-        test_df['desc_W_len'] = test_df['item_description'].map(len_of_not_w)
+        # train_df['desc_W_len'] = train_df['item_description'].map(len_of_not_w)
+        # test_df['desc_W_len'] = test_df['item_description'].map(len_of_not_w)
 
 
         # [先把能补充确定的brand填充上，然后再find brand]
@@ -578,7 +558,7 @@ class DataReader():
         self.n_condition_id = np.max([self.train_df.item_condition_id.max(), self.test_df.item_condition_id.max()])+1
         self.n_desc_max_len = np.max([self.train_df.desc_len.max(), self.test_df.desc_len.max()]) + 1
         self.n_name_max_len = np.max([self.train_df.name_len.max(), self.test_df.name_len.max()]) + 1
-        self.n_desc_W_max_len = np.max([self.train_df.desc_W_len.max(), self.test_df.desc_W_len.max()]) + 1
+        # self.n_desc_W_max_len = np.max([self.train_df.desc_W_len.max(), self.test_df.desc_W_len.max()]) + 1
 
     def split_get_train_validation(self):
         """
@@ -603,7 +583,7 @@ class DataReader():
             'name': pad_sequences(dataset['name_int_seq'], maxlen=self.name_seq_len),
             'item_desc': pad_sequences(dataset.desc_int_seq, maxlen=self.item_desc_seq_len),
             'brand': np.array(dataset.brand_le),
-            'category': np.array(dataset.category_le),
+            # 'category': np.array(dataset.category_le),
             'category_main': np.array(dataset.cat_main_le),
             'category_sub': np.array(dataset.cat_sub_le),
             'category_sub2': np.array(dataset.cat_sub2_le),
@@ -611,15 +591,14 @@ class DataReader():
             'num_vars': np.array(dataset[['shipping']]),
             'desc_len': np.array(dataset[["desc_len"]]),
             'name_len': np.array(dataset[["name_len"]]),
-            'desc_W_len': np.array(dataset[["desc_W_len"]]),
-            'desc_idf_sum': np.array(dataset[['desc_idf_sum']]),
+            # 'desc_W_len': np.array(dataset[["desc_W_len"]]),
         }
         return X
 
     def del_redundant_cols(self):
         useful_cols = ['train_id', 'test_id', 'name', 'item_condition_id', 'category_name', 'brand_name', 'price', 'shipping', 'item_description',
                        'category_le', 'cat_name_main', 'cat_name_sub', 'cat_name_sub2', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le',
-                       'brand_le', 'name_int_seq', 'desc_int_seq', 'desc_len', 'name_len', 'desc_W_len', 'desc_idf_sum']
+                       'brand_le', 'name_int_seq', 'desc_int_seq', 'desc_len', 'name_len']  # , 'desc_W_len'
         for col in self.train_df.columns:
             if col not in useful_cols:
                 del self.train_df[col]

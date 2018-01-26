@@ -105,6 +105,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.item_cond_id_emb_dim = item_cond_id_emb_dim
         self.desc_len_dim = desc_len_dim
         self.name_len_dim = name_len_dim
+        # self.desc_W_len_dim = desc_len_dim
         self.GRU_layers_out_dim = GRU_layers_out_dim
         assert len(drop_out_layers) == len(dense_layers_dim)
         self.drop_out_layers = drop_out_layers
@@ -128,8 +129,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         num_vars = Input(shape=[1], name="num_vars")
         desc_len = Input(shape=[1], name="desc_len")
         name_len = Input(shape=[1], name="name_len")
-        desc_W_len = Input(shape=[1], name="desc_W_len")
-        desc_idf_sum = Input(shape=[1], name="desc_idf_sum")
+        # desc_W_len = Input(shape=[1], name="desc_W_len")
 
         # Embedding的作用是配置字典size和词向量len后，根据call参数的indices，返回词向量.
         #  类似TF的embedding_lookup
@@ -144,7 +144,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         emb_brand = Embedding(reader.n_brand, self.brand_emb_dim)(brand)
         emb_desc_len = Embedding(reader.n_desc_max_len, self.desc_len_dim)(desc_len)
         emb_name_len = Embedding(reader.n_name_max_len, self.name_len_dim)(name_len)
-        emb_desc_W_len = Embedding(reader.n_desc_W_max_len, self.desc_len_dim)(desc_W_len)
+        # emb_desc_W_len = Embedding(reader.n_desc_W_max_len, self.desc_len_dim)(desc_W_len)
 
         # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
         rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0])(emb_name)
@@ -160,12 +160,11 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
                                   Flatten()(emb_cond_id),
                                   Flatten()(emb_desc_len),
                                   Flatten()(emb_name_len),
-                                  Flatten()(emb_desc_W_len),
+                                  # Flatten()(emb_desc_W_len),
                                   rnn_layer_name,
                                   rnn_layer_item_desc,
                                   # rnn_layer_cat_name,
-                                  num_vars,
-                                  desc_idf_sum])
+                                  num_vars])
         # Concat[all] -> Dense1 -> ... -> DenseN
         for i in range(len(self.dense_layers_dim)):
             main_layer = Dropout(self.drop_out_layers[i])(Dense(self.dense_layers_dim[i], activation='relu')(main_layer))
@@ -174,7 +173,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         output = Dense(1, activation="linear")(main_layer)
 
         # model
-        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars, desc_len, name_len, desc_W_len, desc_idf_sum],  # category_name
+        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars, desc_len, name_len],#, desc_W_len],  # category_name
                       outputs=output)
         # optimizer = optimizers.RMSprop()
         optimizer = optimizers.Adam(lr=0.001, decay=0.0)
@@ -259,7 +258,7 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'name_emb_dim': [20, 15, 25],  # In name each word's vector length
+                'name_emb_dim': [20],  # In name each word's vector length
                 'item_desc_emb_dim': [60],
                 # 'cat_name_emb_dim': [20],
                 'brand_emb_dim': [10],
@@ -311,7 +310,7 @@ def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_
     reg = GridSearchCV(estimator=regress_model,
                        param_grid=cv_grid_params.all_params,
                        n_jobs=N_CORE,
-                       cv=KFold(n_splits=7, shuffle=True, random_state=cv_grid_params.rand_state),
+                       cv=KFold(n_splits=5, shuffle=True, random_state=cv_grid_params.rand_state),
                        scoring=cv_grid_params.scoring,
                        verbose=2,
                        refit=True)
@@ -434,7 +433,7 @@ if __name__ == "__main__":
     cv_grid_params = CvGridParams()
     adjust_para_list = print_param(cv_grid_params)
 
-    if len(adjust_para_list) > 0:
+    if LOCAL_FLAG and len(adjust_para_list) > 0:
         # 4. Use GridSearchCV to tuning model.
         regress_model = SelfLocalRegressor(data_reader=data_reader)
         print('Begin to train self-defined sklearn-API regressor.')
@@ -462,6 +461,7 @@ if __name__ == "__main__":
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
     else:
+        assert len(adjust_para_list) == 0
         cv_grid_params.rm_list_dict_params()
         regress_model = SelfLocalRegressor(data_reader=data_reader, **cv_grid_params.all_params)
 

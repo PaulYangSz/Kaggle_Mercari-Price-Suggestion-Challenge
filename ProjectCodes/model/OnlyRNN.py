@@ -44,6 +44,7 @@ elif 's30' in platform.node():
     N_CORE = 1
     LOCAL_FLAG = True
 else:
+    N_CORE = 1
     LOCAL_FLAG = False
 
 if LOCAL_FLAG:
@@ -128,6 +129,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         desc_len = Input(shape=[1], name="desc_len")
         name_len = Input(shape=[1], name="name_len")
         desc_W_len = Input(shape=[1], name="desc_W_len")
+        desc_idf_sum = Input(shape=[1], name="desc_idf_sum")
 
         # Embedding的作用是配置字典size和词向量len后，根据call参数的indices，返回词向量.
         #  类似TF的embedding_lookup
@@ -162,7 +164,8 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
                                   rnn_layer_name,
                                   rnn_layer_item_desc,
                                   # rnn_layer_cat_name,
-                                  num_vars])
+                                  num_vars,
+                                  desc_idf_sum])
         # Concat[all] -> Dense1 -> ... -> DenseN
         for i in range(len(self.dense_layers_dim)):
             main_layer = Dropout(self.drop_out_layers[i])(Dense(self.dense_layers_dim[i], activation='relu')(main_layer))
@@ -171,7 +174,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         output = Dense(1, activation="linear")(main_layer)
 
         # model
-        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars, desc_len, name_len, desc_W_len],  # category_name
+        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars, desc_len, name_len, desc_W_len, desc_idf_sum],  # category_name
                       outputs=output)
         # optimizer = optimizers.RMSprop()
         optimizer = optimizers.Adam(lr=0.001, decay=0.0)

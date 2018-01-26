@@ -36,6 +36,7 @@ elif 's30' in platform.node():
     N_CORE = 4
     LOCAL_FLAG = True
 else:
+    N_CORE = 1
     LOCAL_FLAG = False
 
 if LOCAL_FLAG:
@@ -256,7 +257,26 @@ class DataReader():
         else:
             print('【错误】：item_desc_fill_type should be: "fill_" or "fill_paulnull" or "base_name"')
 
-        desc_tv = TfidfVectorizer(ngram_range=(1, 3), max_features=100000)  # stop_words='english'
+
+        # All Tf-IDF sum()
+        idf_sum_start = time.time()
+        all_df = pd.concat([train_df, test_df]).reset_index(drop=True)[test_df.columns]
+        desc_tv = TfidfVectorizer(ngram_range=(1, 2), max_features=100000)  # stop_words='english'
+        desc_tv.fit(all_df['item_description'])
+        train_df['desc_idf_sum'] = desc_tv.transform(train_df['item_description']).sum(axis=1)
+        test_df['desc_idf_sum'] = desc_tv.transform(test_df['item_description']).sum(axis=1)
+        split_value_bins = list(train_df['desc_idf_sum'].quantile([q/300 for q in range(1, 300)]).values)
+        def float_to_category(value):
+            i = 0
+            for split_v in split_value_bins:
+                if value < split_v:
+                    return i
+                i += 1
+            return i
+        # train_df['desc_idf_sum'] = train_df['desc_idf_sum'].map(float_to_category)
+        # test_df['desc_idf_sum'] = test_df['desc_idf_sum'].map(float_to_category)
+        print('Calc ["desc_idf_sum"] cost {}s'.format(time.time() - idf_sum_start))
+
 
         # 统计下description中特殊字符的个数
         def len_of_not_w(str_from):
@@ -592,13 +612,14 @@ class DataReader():
             'desc_len': np.array(dataset[["desc_len"]]),
             'name_len': np.array(dataset[["name_len"]]),
             'desc_W_len': np.array(dataset[["desc_W_len"]]),
+            'desc_idf_sum': np.array(dataset[['desc_idf_sum']]),
         }
         return X
 
     def del_redundant_cols(self):
         useful_cols = ['train_id', 'test_id', 'name', 'item_condition_id', 'category_name', 'brand_name', 'price', 'shipping', 'item_description',
                        'category_le', 'cat_name_main', 'cat_name_sub', 'cat_name_sub2', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le',
-                       'brand_le', 'name_int_seq', 'desc_int_seq', 'desc_len', 'name_len', 'desc_W_len']
+                       'brand_le', 'name_int_seq', 'desc_int_seq', 'desc_len', 'name_len', 'desc_W_len', 'desc_idf_sum']
         for col in self.train_df.columns:
             if col not in useful_cols:
                 del self.train_df[col]

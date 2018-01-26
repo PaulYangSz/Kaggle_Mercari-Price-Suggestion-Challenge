@@ -16,6 +16,7 @@ import time
 from scipy.sparse import csr_matrix, hstack
 from keras.preprocessing.sequence import pad_sequences
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.pipeline import FeatureUnion
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
@@ -208,12 +209,6 @@ def base_name_get_brand(rm_regex_brand_known_ordered_list:list, str_name):
 
 
 class DataReader():
-    name_cv = None
-    cat_main_cv = None
-    cat_sub_cv = None
-    cat_sub2_cv = None
-    desc_tv = None
-    brand_lb = None
 
     def __init__(self, local_flag:bool, cat_fill_type:str, brand_fill_type:str, item_desc_fill_type:str):
         record_log(local_flag, '\n构建数据DF时使用的参数：\n'
@@ -612,70 +607,72 @@ class DataReader():
                 del self.test_df[col]
         gc.collect()
 
-    def train_ridge_numpy_data_condition(self):
+    def get_split_sparse_data(self):
         """
         无法和Keras的数据在一个模型里共存，因为这里需要用稀疏矩阵存储，而且大家对原始特征数据的处理方式也有不同
         :return:
         """
-        NUM_BRANDS = 4500
-        NUM_CATEGORIES = 1000
-        NAME_MIN_DF = 10
-        MAX_FEATURES_ITEM_DESCRIPTION = 90000
+        def cols_astype_to_str(dataset):
+            dataset['shipping'] = dataset['shipping'].astype(str)
+            dataset['item_condition_id'] = dataset['item_condition_id'].astype(str)
+            dataset['desc_len'] = dataset['desc_len'].astype(str)
+            dataset['name_len'] = dataset['name_len'].astype(str)
+        cols_astype_to_str(self.train_df)
+        cols_astype_to_str(self.test_df)
 
-        merge_df = pd.concat([self.train_df, self.test_df]).reset_index(drop=True).loc[:, self.train_df.columns[1:]]
+        merge_df = pd.concat([self.train_df, self.test_df]).reset_index(drop=True)[self.test_df.columns]
+        print('~~Check~~ merge_df.axes = {}'.format(merge_df.axes))
 
-        def cutting(merge_set, train_set, test_set):
-            pop_brand = merge_set['brand_name'].value_counts().loc[lambda x: x.index != 'paulnull'].index[:NUM_BRANDS]
-            train_set.loc[~train_set['brand_name'].isin(pop_brand), 'brand_name'] = 'paulnull'
-            test_set.loc[~test_set['brand_name'].isin(pop_brand), 'brand_name'] = 'paulnull'
-            pop_category1 = merge_set['cat_name_main'].value_counts().loc[lambda x: x.index != 'paulnull'].index[:NUM_CATEGORIES]
-            pop_category2 = merge_set['cat_name_sub'].value_counts().loc[lambda x: x.index != 'paulnull'].index[:NUM_CATEGORIES]
-            pop_category3 = merge_set['cat_name_sub2'].value_counts().loc[lambda x: x.index != 'paulnull'].index[:NUM_CATEGORIES]
-            train_set.loc[~train_set['cat_name_main'].isin(pop_category1), 'cat_name_main'] = 'paulnull'
-            test_set.loc[~test_set['cat_name_main'].isin(pop_category1), 'cat_name_main'] = 'paulnull'
-            train_set.loc[~train_set['cat_name_sub'].isin(pop_category2), 'cat_name_sub'] = 'paulnull'
-            test_set.loc[~test_set['cat_name_sub'].isin(pop_category2), 'cat_name_sub'] = 'paulnull'
-            train_set.loc[~train_set['cat_name_sub2'].isin(pop_category3), 'cat_name_sub2'] = 'paulnull'
-            test_set.loc[~test_set['cat_name_sub2'].isin(pop_category3), 'cat_name_sub2'] = 'paulnull'
-        cutting(merge_df, self.train_df, self.test_df)
+        default_preprocessor = CountVectorizer().build_preprocessor()
+        def build_preprocessor(field):
+            field_idx = list(self.test_df.columns).index(field)
+            return lambda x: default_preprocessor(x[field_idx])
 
-        def to_categorical(dataset):
-            dataset['cat_name_main'] = dataset['cat_name_main'].astype('category')
-            dataset['cat_name_sub'] = dataset['cat_name_sub'].astype('category')
-            dataset['cat_name_sub2'] = dataset['cat_name_sub2'].astype('category')
-            dataset['item_condition_id'] = dataset['item_condition_id'].astype('category')
-        to_categorical(self.train_df)
-        to_categorical(self.test_df)
-        merge_df = pd.concat([self.train_df, self.test_df]).reset_index(drop=True).loc[:, self.train_df.columns[1:]]
+        feat_union = FeatureUnion([
+            ('name', CountVectorizer(
+                ngram_range=(1, 2),
+                max_features=50000,
+                preprocessor=build_preprocessor('name'))),
+            ('cat_name_main', CountVectorizer(
+                token_pattern='.+',
+                preprocessor=build_preprocessor('cat_name_main'))),
+            ('cat_name_sub', CountVectorizer(
+                token_pattern='.+',
+                preprocessor=build_preprocessor('cat_name_sub'))),
+            ('cat_name_sub2', CountVectorizer(
+                token_pattern='.+',
+                preprocessor=build_preprocessor('cat_name_sub2'))),
+            ('brand_name', CountVectorizer(
+                token_pattern='.+',
+                preprocessor=build_preprocessor('brand_name'))),
+            ('shipping', CountVectorizer(
+                token_pattern='\d+',
+                preprocessor=build_preprocessor('shipping'))),
+            ('item_condition_id', CountVectorizer(
+                token_pattern='\d+',
+                preprocessor=build_preprocessor('item_condition_id'))),
+            ('desc_len', CountVectorizer(
+                token_pattern='\d+',
+                preprocessor=build_preprocessor('desc_len'))),
+            ('name_len', CountVectorizer(
+                token_pattern='\d+',
+                preprocessor=build_preprocessor('name_len'))),
+            ('item_description', TfidfVectorizer(
+                ngram_range=(1, 3),
+                max_features=100000,
+                preprocessor=build_preprocessor('item_description'))),
+        ])
+        feat_union.fit(merge_df.values)
+        sparse_train_X = feat_union.transform(self.train_df.drop('price', axis=1).values)
+        if 'target' in self.train_df.columns:
+            train_y = self.train_df['target']
+        else:
+            train_y = np.log1p(self.train_df['price'])
+        sparse_test_X = feat_union.transform(self.test_df.values)
 
-        self.name_cv = CountVectorizer(min_df=NAME_MIN_DF, ngram_range=(1, 2), stop_words='english')
-        self.name_cv.fit(merge_df['name'])
-
-        self.cat_main_cv = CountVectorizer()
-        self.cat_main_cv.fit(merge_df['cat_name_main'])
-        self.cat_sub_cv = CountVectorizer()
-        self.cat_sub_cv.fit(merge_df['cat_name_sub'])
-        self.cat_sub2_cv = CountVectorizer()
-        self.cat_sub2_cv.fit(merge_df['cat_name_sub2'])
-
-        self.desc_tv = TfidfVectorizer(max_features=MAX_FEATURES_ITEM_DESCRIPTION,
-                                       ngram_range=(1, 2),
-                                       stop_words='english')
-        self.desc_tv.fit(merge_df['item_description'])
-
-        self.brand_lb = LabelBinarizer(sparse_output=True)
-        self.brand_lb.fit(merge_df['brand_name'])
-
-    def get_ridge_sparse_data(self, dataset):
-        X_name = self.name_cv.transform(dataset['name'])
-        X_category1 = self.cat_main_cv.transform(dataset['cat_name_main'])
-        X_category2 = self.cat_sub_cv.transform(dataset['cat_name_sub'])
-        X_category3 = self.cat_sub2_cv.transform(dataset['cat_name_sub2'])
-        X_description = self.desc_tv.transform(dataset['item_description'])
-        X_brand = self.brand_lb.transform(dataset['brand_name'])
-        X_dummies = csr_matrix(pd.get_dummies(dataset[['item_condition_id', 'shipping']], sparse=True).values)
-        print(X_dummies.shape, X_description.shape, X_brand.shape, X_category1.shape, X_category2.shape, X_category3.shape, X_name.shape)
-        return hstack((X_dummies, X_description, X_brand, X_category1, X_category2, X_category3, X_name)).tocsr()
+        X_train, X_test, y_train, y_test = train_test_split(sparse_train_X, train_y, random_state=123, test_size=0.01)
+        record_log(self.local_flag, "train_test_split: X_train={}, X_test={}".format(X_train.shape, X_test.shape))
+        return X_train, X_test, y_train, y_test, sparse_test_X
 
 
 

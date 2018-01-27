@@ -7,6 +7,8 @@ Use sklearn based API model to local run and tuning.
 import platform
 import os
 import sys
+from pprint import pprint
+
 import pandas as pd
 import numpy as np
 import time
@@ -115,6 +117,11 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.batch_size = batch_size
         self.lr_init = lr_init
         self.lr_final = lr_final
+
+    def __del__(self):
+        print('%%%%%%%%__del__')
+        if K.backend() == 'tensorflow':
+            K.clear_session()
 
     def get_GRU_model(self, reader:DataReader):
         # Inputs
@@ -258,8 +265,8 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'name_emb_dim': [20],  # In name each word's vector length
-                'item_desc_emb_dim': [60],
+                'name_emb_dim': [15],  # In name each word's vector length
+                'item_desc_emb_dim': [70],
                 # 'cat_name_emb_dim': [20],
                 'brand_emb_dim': [10],
                 'cat_main_emb_dim': [10],
@@ -268,7 +275,7 @@ class CvGridParams(object):
                 'item_cond_id_emb_dim': [5],
                 'desc_len_dim': [5],
                 'name_len_dim': [5],
-                'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units
+                'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
                 'drop_out_layers': [(0.1, 0.1, 0.1, 0.1)],
                 'dense_layers_dim': [(512, 256, 128, 64)],
                 'epochs': [2],
@@ -313,9 +320,13 @@ def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_
                        cv=KFold(n_splits=5, shuffle=True, random_state=cv_grid_params.rand_state),
                        scoring=cv_grid_params.scoring,
                        verbose=2,
-                       refit=True)
+                       refit=False)
     reg.fit(sample_X, sample_y)
-    return reg
+
+    pprint(reg.best_params_)
+    regress_model = SelfLocalRegressor(data_reader=data_reader, **reg.best_params_)
+    regress_model.fit(sample_X, sample_y)
+    return reg, regress_model
 
 
 def get_cv_result_df(cv_results_:dict, adjust_paras:list, n_cv):
@@ -437,7 +448,7 @@ if __name__ == "__main__":
         # 4. Use GridSearchCV to tuning model.
         regress_model = SelfLocalRegressor(data_reader=data_reader)
         print('Begin to train self-defined sklearn-API regressor.')
-        reg = train_model_with_gridsearch(regress_model, sample_df, cv_grid_params)
+        reg, regress_model = train_model_with_gridsearch(regress_model, sample_df, cv_grid_params)
         RECORD_LOG('[{:.4f}s] Finished Grid Search and training.'.format(time.time() - start_time))
 
         # 5. See the CV result
@@ -445,7 +456,7 @@ if __name__ == "__main__":
 
         # 6. Use Trained Regressor to predict the last validation dataset
         validation_scores = pd.DataFrame(columns=["explained_var_score", "mean_abs_error", "mean_sqr_error", "median_abs_error", "r2score"])
-        predict_y, score_list = selfregressor_predict_and_score(reg, last_valida_df)
+        predict_y, score_list = selfregressor_predict_and_score(regress_model, last_valida_df)
         validation_scores.loc["last_valida_df"] = score_list
         with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
             RECORD_LOG("对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
@@ -453,7 +464,7 @@ if __name__ == "__main__":
         # analysis_predict_result(last_valida_df)
 
         # 7. Predict and submit
-        test_preds = reg.predict(test_df)
+        test_preds = regress_model.predict(test_df)
         test_preds = np.expm1(test_preds)
         RECORD_LOG('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
         submission = test_df[["test_id"]].copy()

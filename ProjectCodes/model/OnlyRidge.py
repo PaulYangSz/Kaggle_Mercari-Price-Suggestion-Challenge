@@ -84,7 +84,7 @@ class CvGridParams(object):
             self.all_params = {
                 'solver': ['auto'],
                 'fit_intercept': [True],
-                'alpha': [1.0],
+                'alpha': [4.75],  # np.linspace(0.01, 10, 100),
                 'max_iter': [100],
                 'normalize': [False],
                 'tol': [0.05],
@@ -203,7 +203,7 @@ if __name__ == "__main__":
     cv_grid_params = CvGridParams()
     adjust_para_list = print_param(cv_grid_params)
 
-    if LOCAL_FLAG: #  len(adjust_para_list) > 0:
+    if LOCAL_FLAG and len(adjust_para_list) > 0:
         # 4. Use GridSearchCV to tuning model.
         print('Begin to train self-defined sklearn-API regressor.')
         regress_model = Ridge()

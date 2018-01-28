@@ -621,7 +621,7 @@ class DataReader():
         cols_astype_to_str(self.test_df)
 
         merge_df = pd.concat([self.train_df, self.test_df]).reset_index(drop=True)[self.test_df.columns]
-        print('~~Check~~ merge_df.axes = {}'.format(merge_df.axes))
+        # print('~~Check~~ merge_df.axes = {}'.format(merge_df.axes))
 
         default_preprocessor = CountVectorizer().build_preprocessor()
         def build_preprocessor(field):
@@ -662,13 +662,16 @@ class DataReader():
                 max_features=100000,
                 preprocessor=build_preprocessor('item_description'))),
         ])
+        feat_union_start = time.time()
         feat_union.fit(merge_df.values)
+        record_log(self.local_flag, 'FeatureUnion fit() cost {}s'.format(time.time() - feat_union_start))
         sparse_train_X = feat_union.transform(self.train_df.drop('price', axis=1).values)
         if 'target' in self.train_df.columns:
             train_y = self.train_df['target']
         else:
             train_y = np.log1p(self.train_df['price'])
         sparse_test_X = feat_union.transform(self.test_df.values)
+        record_log(self.local_flag, 'FeatureUnion fit&transform() cost {}s'.format(time.time() - feat_union_start))
 
         X_train, X_test, y_train, y_test = train_test_split(sparse_train_X, train_y, random_state=123, test_size=0.01)
         record_log(self.local_flag, "train_test_split: X_train={}, X_test={}".format(X_train.shape, X_test.shape))

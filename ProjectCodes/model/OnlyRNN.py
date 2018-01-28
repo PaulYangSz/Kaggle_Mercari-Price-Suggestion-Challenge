@@ -19,9 +19,6 @@ from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, median_absolute_error
 from sklearn.metrics import r2_score
 from sklearn.model_selection import GridSearchCV, KFold
-from sklearn.model_selection import StratifiedKFold
-from sklearn.model_selection import train_test_split
-from sklearn.utils.estimator_checks import check_estimator
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from keras.layers import Input, Dropout, Dense, BatchNormalization, \
     Activation, concatenate, GRU, Embedding, Flatten
@@ -75,6 +72,23 @@ if LOCAL_FLAG:
         Logger = start_logging()
 
 RECORD_LOG = lambda log_str: record_log(LOCAL_FLAG, log_str)
+
+SPEED_UP = True
+if SPEED_UP:
+    import pyximport
+    pyximport.install()
+    import os
+    import random
+    import tensorflow as tf
+    os.environ['PYTHONHASHSEED'] = '10000'
+    np.random.seed(123)
+    # random.seed(10002)
+    session_conf = tf.ConfigProto(intra_op_parallelism_threads=5, inter_op_parallelism_threads=1)
+    from keras import backend
+    # tf.set_random_seed(10003)
+    backend.set_session(tf.Session(graph=tf.get_default_graph(), config=session_conf))
+else:
+    np.random.seed(123)
 
 
 class SelfLocalRegressor(BaseEstimator, RegressorMixin):
@@ -251,7 +265,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         # X = check_array(X)  # ValueError: setting an array element with a sequence. This is caused by "XXX_seq"
 
         keras_X = self.data_reader.get_keras_dict_data(X)
-        gru_y = self.emb_GRU_model.predict(keras_X, batch_size=self.batch_size, verbose=RNN_VERBOSE)
+        gru_y = self.emb_GRU_model.predict(keras_X, batch_size=70000, verbose=RNN_VERBOSE)
         gru_y = gru_y.reshape(gru_y.shape[0])
 
         return gru_y

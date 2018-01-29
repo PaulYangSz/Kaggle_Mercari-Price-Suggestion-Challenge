@@ -224,9 +224,13 @@ with graph.as_default():
     place_lr = tf.placeholder(tf.float32, shape=(), )
 
     name = embed(place_name, name_voc_size, name_embeddings_dim)
+    print("Get from embed(place_name), name.shape={}".format(name.shape))  # (?, 8, 32)表示[batch, in_width, in_channels]
     desc = embed(place_desc, desc_voc_size, desc_embeddings_dim)
+    print("Get from embed(place_desc), desc.shape={}".format(desc.shape))  # (?, 40, 32)
     brand = embed(place_brand, brand_voc_size, brand_embeddings_dim)
+    print("Get from embed(place_brand), brand.shape={}".format(brand.shape))  # (?, 1, 4)
     cat = embed(place_cat, cat_voc_size, cat_embeddings_dim)
+    print("Get from embed(place_cat), cat.shape={}".format(cat.shape))  # (?, 2, 12)
 
     name = conv1d(name, num_filters=10, filter_size=3)
     name = tf.layers.dropout(name, rate=0.5)

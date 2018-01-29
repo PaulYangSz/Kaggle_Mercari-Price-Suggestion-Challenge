@@ -73,7 +73,7 @@ if LOCAL_FLAG:
 
 RECORD_LOG = lambda log_str: record_log(LOCAL_FLAG, log_str)
 
-SPEED_UP = True
+SPEED_UP = False
 if SPEED_UP:
     import pyximport
     pyximport.install()
@@ -396,6 +396,7 @@ def selfregressor_predict_and_score(reg, last_valida_df):
     print('对样本集中留出的验证集进行预测:')
     verify_X = last_valida_df.drop('target', axis=1)
     predict_ = reg.predict(verify_X)
+    print('predict_.shape={}, isnan count={}'.format(predict_.shape, np.isnan(predict_).sum()))
     # print(predict_)
     verify_golden = last_valida_df['target'].values
     explained_var_score = explained_variance_score(y_true=verify_golden, y_pred=predict_)
@@ -459,6 +460,7 @@ if __name__ == "__main__":
     adjust_para_list = print_param(cv_grid_params)
 
     if LOCAL_FLAG and len(adjust_para_list) > 0:
+        print('==========Need GridCV')
         # 4. Use GridSearchCV to tuning model.
         regress_model = SelfLocalRegressor(data_reader=data_reader)
         print('Begin to train self-defined sklearn-API regressor.')
@@ -486,6 +488,7 @@ if __name__ == "__main__":
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
     else:
+        print('==========Only Fit')
         assert len(adjust_para_list) == 0
         cv_grid_params.rm_list_dict_params()
         regress_model = SelfLocalRegressor(data_reader=data_reader, **cv_grid_params.all_params)

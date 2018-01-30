@@ -29,7 +29,8 @@ import math
 # set seed
 np.random.seed(123)
 
-SPEED_UP = True
+EXPM1_before_MUL_Best12_Flag = False
+SPEED_UP = False
 if SPEED_UP:
     import pyximport
     pyximport.install()
@@ -324,7 +325,8 @@ print(" RMSLE error:", rmsle(Y_dev, Y_dev_preds_rnn))
 
 #prediction for test data
 rnn_preds = rnn_model.predict(X_test, batch_size=BATCH_SIZE, verbose=1)
-rnn_preds = np.expm1(rnn_preds)
+if EXPM1_before_MUL_Best12_Flag:
+    rnn_preds = np.expm1(rnn_preds)
 elapsed = time_measure("rnn_model.predict()", start, elapsed)
 
 
@@ -420,9 +422,11 @@ print("CV RMSL error on dev set:", rmsle(Y_dev, Y_dev_preds_ridgeCV))
 
 #prediction for test data
 ridge_preds = ridge_model.predict(X_test)
-ridge_preds = np.expm1(ridge_preds)
+if EXPM1_before_MUL_Best12_Flag:
+    ridge_preds = np.expm1(ridge_preds)
 ridgeCV_preds = ridge_modelCV.predict(X_test)
-ridgeCV_preds = np.expm1(ridgeCV_preds)
+if EXPM1_before_MUL_Best12_Flag:
+    ridgeCV_preds = np.expm1(ridgeCV_preds)
 
 
 #combine all predictions
@@ -449,17 +453,20 @@ for i in range(100):
 Y_dev_preds = aggregate_predicts3(Y_dev_preds_rnn, Y_dev_preds_ridgeCV, Y_dev_preds_ridge, best1, best2)
 elapsed = time_measure("aggregate_predicts3() get best coefficients", start, elapsed)
 
-
-print("(Best) RMSL error for RNN + Ridge + RidgeCV on dev set:", rmsle(Y_dev, Y_dev_preds))
+dev_best_rmsle = rmsle(Y_dev, Y_dev_preds)
+print("(Best) RMSL error for RNN + Ridge + RidgeCV on dev set:", dev_best_rmsle)
 
 
 # best predicted submission
 preds = aggregate_predicts3(rnn_preds, ridgeCV_preds, ridge_preds, best1, best2)
+if not EXPM1_before_MUL_Best12_Flag:
+    preds = np.expm1(ridge_preds)
 submission = pd.DataFrame({
     "test_id": test_df.test_id,
     "price": preds.reshape(-1),
 })
-submission.to_csv("./rnn_ridge_submission.csv", index=False)
+# submission.to_csv("./rnn_ridge_submission.csv", index=False)
+submission.to_csv("./best1[{}]_best2[{}]_DevBestRmsle[{}].csv".format(best1,best2,dev_best_rmsle), index=False)
 print("completed time:")
 stop_real = datetime.now()
 execution_time_real = stop_real-start_real

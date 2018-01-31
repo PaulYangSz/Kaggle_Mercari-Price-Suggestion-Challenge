@@ -294,8 +294,8 @@ class CvGridParams(object):
                 'dense_layers_dim': [(512, 256, 128, 64)],
                 'epochs': [2],
                 'batch_size': [512*3],
-                'lr_init': [0.005],
-                'lr_final': [0.001],
+                'lr_init': [0.007],  # np.linspace(0.002, 0.01, 9)
+                'lr_final': [0.000236781]  # np.geomspace(0.0001, 0.006, 20),
             }
         else:
             print("Construct CvGridParams with error param_type: " + param_type)
@@ -362,7 +362,7 @@ def show_CV_result(reg:GridSearchCV, adjust_paras, classifi_scoring):
     RECORD_LOG(
         '{}: MAX of mean_train_score = {}'.format(classifi_scoring, reg.cv_results_.get('mean_train_score').max()))
     cv_result_df = get_cv_result_df(reg.cv_results_, adjust_paras, reg.cv.n_splits)
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
+    with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
         RECORD_LOG('\n对各组调参参数的交叉训练验证细节为：\n{}'.format(cv_result_df))
     if len(adjust_paras) == 1 and platform.system() == 'Windows':
         every_para_score = pd.Series()
@@ -426,16 +426,14 @@ if __name__ == "__main__":
     RECORD_LOG("Handling categorical variables...")
     data_reader.le_encode()
     RECORD_LOG('[{:.4f}s] Finished PROCESSING CATEGORICAL DATA...'.format(time.time() - start_time))
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
-                           'display.height', None):
+    with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
         RECORD_LOG('\n{}'.format(data_reader.train_df.head(3)))
 
     # PROCESS TEXT: RAW
     RECORD_LOG("Text to seq process...")
     RECORD_LOG("   Fitting tokenizer...")
     data_reader.tokenizer_text_col()
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
-                           'display.height', None):
+    with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
         RECORD_LOG('\n{}'.format(data_reader.train_df.head(3)))
     RECORD_LOG('[{:.4f}s] Finished PROCESSING TEXT DATA...'.format(time.time() - start_time))
 
@@ -474,7 +472,7 @@ if __name__ == "__main__":
         validation_scores = pd.DataFrame(columns=["explained_var_score", "mean_abs_error", "mean_sqr_error", "median_abs_error", "r2score"])
         predict_y, score_list = selfregressor_predict_and_score(regress_model, last_valida_df)
         validation_scores.loc["last_valida_df"] = score_list
-        with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
+        with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
             RECORD_LOG("对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
         last_valida_df['predict'] = predict_y
         # analysis_predict_result(last_valida_df)
@@ -502,7 +500,7 @@ if __name__ == "__main__":
             columns=["explained_var_score", "mean_abs_error", "mean_sqr_error", "median_abs_error", "r2score"])
         predict_y, score_list = selfregressor_predict_and_score(regress_model, last_valida_df)
         validation_scores.loc["last_valida_df"] = score_list
-        with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
+        with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
             RECORD_LOG("对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
         last_valida_df['predict'] = predict_y
 

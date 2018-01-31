@@ -23,13 +23,15 @@ from keras.optimizers import Adam
 from keras.models import Model
 from keras import backend as K
 import time
+import re
 from nltk.corpus import stopwords
 import math
 
 # set seed
 np.random.seed(123)
 
-EXPM1_before_MUL_Best12_Flag = False
+RNN_VERBOSE = 10
+EXPM1_before_MUL_Best12_Flag = True
 SPEED_UP = False
 if SPEED_UP:
     import pyximport
@@ -308,7 +310,7 @@ lr_decay = exp_decay(lr_init, lr_fin, steps)
 
 # Create model and fit it with training dataset.
 rnn_model = new_rnn_model(lr=lr_init, decay=lr_decay)
-rnn_model.fit(X_train, Y_train, epochs=epochs, batch_size=BATCH_SIZE,validation_data=(X_dev, Y_dev), verbose=1)
+rnn_model.fit(X_train, Y_train, epochs=epochs, batch_size=BATCH_SIZE,validation_data=(X_dev, Y_dev), verbose=RNN_VERBOSE)
 elapsed = time_measure("rnn_model.fit()", start, elapsed)
 
 
@@ -461,12 +463,9 @@ print("(Best) RMSL error for RNN + Ridge + RidgeCV on dev set:", dev_best_rmsle)
 preds = aggregate_predicts3(rnn_preds, ridgeCV_preds, ridge_preds, best1, best2)
 if not EXPM1_before_MUL_Best12_Flag:
     preds = np.expm1(ridge_preds)
-submission = pd.DataFrame({
-    "test_id": test_df.test_id,
-    "price": preds.reshape(-1),
-})
+submission = pd.DataFrame({"test_id": test_df.test_id, "price": preds.reshape(-1)}, columns=['test_id', 'price'])
 # submission.to_csv("./rnn_ridge_submission.csv", index=False)
-submission.to_csv("./best1[{}]_best2[{}]_DevBestRmsle[{}].csv".format(best1,best2,dev_best_rmsle), index=False)
+submission.to_csv("./best1_{}_best2_{}_DevBestRmsle_{:.5f}_.csv".format(best1,best2,dev_best_rmsle), index=False)
 print("completed time:")
 stop_real = datetime.now()
 execution_time_real = stop_real-start_real

@@ -65,12 +65,28 @@ elapsed = time_measure("load data", start, elapsed)
 
 # removing prices less than 3
 train_df = train_df.drop(train_df[(train_df.price < 3.0)].index)
-print(train_df.shape)
+print('After drop pricee < 3.0{}'.format(train_df.shape))
+
+
+def fill_item_description_null(str_desc, replace):
+    if pd.isnull(str_desc):
+        return replace
+    else:
+        changeRM = re.sub(pattern=r'\[rm\]', repl='jiagejine', string=str_desc)
+        no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
+        left = re.sub(pattern=no_mean, repl='', string=changeRM)
+        if len(left) > 2:
+            return left
+        else:
+            return replace
+train_df.loc[:, 'item_description'] = train_df['item_description'].map(lambda x: fill_item_description_null(x, ''))
+test_df.loc[:, 'item_description'] = test_df['item_description'].map(lambda x: fill_item_description_null(x, ''))
+
 
 # handling categorical variables
 def wordCount(text):
     try:
-        if text == 'No description yet':
+        if text == '':
             return 0
         else:
             text = text.lower()
@@ -135,8 +151,8 @@ full_df = pd.concat([train_df, dev_df, test_df])
 def fill_missing_values(df):
     df.category_name.fillna(value="missing", inplace=True)
     df.brand_name.fillna(value="missing", inplace=True)
-    df.item_description.fillna(value="missing", inplace=True)
-    df.item_description.replace('No description yet',"missing", inplace=True)
+    # df.item_description.fillna(value="missing", inplace=True)
+    # df.item_description.replace('No description yet',"missing", inplace=True)
     return df
 
 print("Filling missing data...")

@@ -100,9 +100,11 @@ train_df['name_len'] = train_df['name'].apply(lambda x: wordCount(x))
 test_df['name_len'] = test_df['name'].apply(lambda x: wordCount(x))
 
 #splitting category_name into subcategories
+train_df.category_name.fillna(value="paulnull/paulnull/paulnull", inplace=True)
+test_df.category_name.fillna(value="paulnull/paulnull/paulnull", inplace=True)
 def split_cat(text):
     try: return text.split("/")
-    except: return ("No Label", "No Label", "No Label")
+    except: return ("paulnull", "paulnull", "paulnull")
 train_df['subcat_0'], train_df['subcat_1'], train_df['subcat_2'] = zip(*train_df['category_name'].apply(lambda x: split_cat(x)))
 test_df['subcat_0'], test_df['subcat_1'], test_df['subcat_2'] = zip(*test_df['category_name'].apply(lambda x: split_cat(x)))
 
@@ -146,17 +148,6 @@ elapsed = time_measure("word len; cat split; find brand; target & train_test_spl
 
 # Concatenate train - dev - test data for easy to handle
 full_df = pd.concat([train_df, dev_df, test_df])
-
-# Filling missing values in combine dataset
-def fill_missing_values(df):
-    df.category_name.fillna(value="missing", inplace=True)
-    df.brand_name.fillna(value="missing", inplace=True)
-    # df.item_description.fillna(value="missing", inplace=True)
-    # df.item_description.replace('No description yet',"missing", inplace=True)
-    return df
-
-print("Filling missing data...")
-full_df = fill_missing_values(full_df)
 
 
 print("Processing categorical data...")

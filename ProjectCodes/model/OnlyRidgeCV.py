@@ -12,7 +12,7 @@ import numpy as np
 import time
 
 from functools import reduce
-from sklearn.linear_model import Ridge, RidgeCV
+from sklearn.linear_model import RidgeCV
 from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, median_absolute_error
 from sklearn.metrics import r2_score
@@ -82,13 +82,11 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'solver': ['auto'],
                 'fit_intercept': [True],
-                'alpha': [4.75],  # np.linspace(0.01, 10, 100),
-                'max_iter': [100],
+                'alphas': [[alp] for alp in np.linspace(0.01, 10, 50)],
                 'normalize': [False],
-                'tol': [0.05],
-                'random_state': [self.rand_state],
+                'cv': [2, 5],
+                'scoring': ['neg_mean_squared_error'],
             }
         else:
             print("Construct CvGridParams with error param_type: " + param_type)
@@ -187,6 +185,7 @@ if __name__ == "__main__":
     data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
     RECORD_LOG('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
+    data_reader.tokenizer_text_col()  # For desc_word_len, name_word_len and desc_npc_cnt
     data_reader.del_redundant_cols()
 
     # FIT FEATURES TRANSFORMERS
@@ -206,7 +205,7 @@ if __name__ == "__main__":
     if LOCAL_FLAG and len(adjust_para_list) > 0:
         # 4. Use GridSearchCV to tuning model.
         print('Begin to train self-defined sklearn-API regressor.')
-        regress_model = Ridge()
+        regress_model = RidgeCV()
         reg = GridSearchCV(estimator=regress_model,
                            param_grid=cv_grid_params.all_params,
                            n_jobs=N_CORE,
@@ -240,7 +239,7 @@ if __name__ == "__main__":
     else:
         assert len(adjust_para_list) == 0
         cv_grid_params.rm_list_dict_params()
-        regress_model = Ridge(**cv_grid_params.all_params)
+        regress_model = RidgeCV(**cv_grid_params.all_params)
         regress_model.fit(sample_X, sample_y)
 
         # 6. Use Trained Regressor to predict the last validation dataset

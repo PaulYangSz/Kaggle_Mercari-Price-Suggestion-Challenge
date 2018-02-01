@@ -141,7 +141,6 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         # Inputs
         name = Input(shape=[reader.name_seq_len], name="name")
         item_desc = Input(shape=[reader.item_desc_seq_len], name="item_desc")
-        # category_name = Input(shape=[reader.cat_name_seq_len], name="category_name")
         item_condition = Input(shape=[1], name="item_condition")
         category_main = Input(shape=[1], name="category_main")
         category_sub = Input(shape=[1], name="category_sub")
@@ -157,7 +156,6 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         #  name.shape=[None, MAX_NAME_SEQ] -> emb_name.shape=[None, MAX_NAME_SEQ, output_dim]
         emb_name = Embedding(input_dim=reader.n_text_dict_words, output_dim=self.name_emb_dim)(name)
         emb_item_desc = Embedding(reader.n_text_dict_words, self.item_desc_emb_dim)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
-        # emb_category_name = Embedding(reader.n_text_dict_words, self.cat_name_emb_dim)(category_name)
         emb_cond_id = Embedding(reader.n_condition_id, self.item_cond_id_emb_dim)(item_condition)
         emb_cat_main = Embedding(reader.n_cat_main, self.cat_main_emb_dim)(category_main)
         emb_cat_sub = Embedding(reader.n_cat_sub, self.cat_sub_emb_dim)(category_sub)

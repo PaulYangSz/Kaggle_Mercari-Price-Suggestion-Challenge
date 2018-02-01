@@ -466,7 +466,6 @@ class DataReader():
         self.item_desc_seq_len = 0
         self.cat_name_seq_len = 0
         self.n_text_dict_words = 0
-        self.n_category = 0
         self.n_cat_main = 0
         self.n_cat_sub = 0
         self.n_cat_sub2 = 0
@@ -478,11 +477,6 @@ class DataReader():
 
     def le_encode(self):
         le = LabelEncoder()  # 给字符串或者其他对象编码, 从0开始编码
-
-        # LabelEncoder cat-name
-        le.fit(np.hstack([self.train_df['category_name'], self.test_df['category_name']]))
-        self.train_df['category_le'] = le.transform(self.train_df['category_name'])
-        self.test_df['category_le'] = le.transform(self.test_df['category_name'])
 
         # LabelEncoder cat_main & cat_sub & cat_sub2
         le.fit(np.hstack([self.train_df['cat_name_main'], self.test_df['cat_name_main']]))
@@ -547,7 +541,6 @@ class DataReader():
                                              # self.test_df.cat_int_seq.map(max).max(),
                                              self.train_df.desc_int_seq.map(max).max(),
                                              self.test_df.desc_int_seq.map(max).max()]) + 2
-        self.n_category = np.max([self.train_df.category_le.max(), self.test_df.category_le.max()]) + 1
         self.n_cat_main = np.max([self.train_df.cat_main_le.max(), self.test_df.cat_main_le.max()]) + 1  # LE编码后最大值+1
         self.n_cat_sub = np.max([self.train_df.cat_sub_le.max(), self.test_df.cat_sub_le.max()]) + 1
         self.n_cat_sub2 = np.max([self.train_df.cat_sub2_le.max(), self.test_df.cat_sub2_le.max()]) + 1
@@ -555,7 +548,7 @@ class DataReader():
         self.n_condition_id = np.max([self.train_df.item_condition_id.max(), self.test_df.item_condition_id.max()])+1
         self.n_desc_max_len = np.max([self.train_df.desc_len.max(), self.test_df.desc_len.max()]) + 1
         self.n_name_max_len = np.max([self.train_df.name_len.max(), self.test_df.name_len.max()]) + 1
-        self.n_npc_max_cnt = np.max(self.train_df.desc_npc_cnt.max(), self.test_df.desc_npc_cnt.max()) + 1
+        self.n_npc_max_cnt = np.max([self.train_df.desc_npc_cnt.max(), self.test_df.desc_npc_cnt.max()]) + 1
 
     def split_get_train_validation(self):
         """
@@ -580,7 +573,6 @@ class DataReader():
             'name': pad_sequences(dataset['name_int_seq'], maxlen=self.name_seq_len),
             'item_desc': pad_sequences(dataset.desc_int_seq, maxlen=self.item_desc_seq_len),
             'brand': np.array(dataset.brand_le),
-            # 'category': np.array(dataset.category_le),
             'category_main': np.array(dataset.cat_main_le),
             'category_sub': np.array(dataset.cat_sub_le),
             'category_sub2': np.array(dataset.cat_sub2_le),
@@ -593,8 +585,8 @@ class DataReader():
         return X
 
     def del_redundant_cols(self):
-        useful_cols = ['train_id', 'test_id', 'name', 'item_condition_id', 'category_name', 'brand_name', 'price', 'shipping', 'item_description',
-                       'category_le', 'cat_name_main', 'cat_name_sub', 'cat_name_sub2', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le',
+        useful_cols = ['train_id', 'test_id', 'name', 'item_condition_id', 'category_name', 'brand_name', 'price', 'shipping',
+                       'item_description', 'cat_name_main', 'cat_name_sub', 'cat_name_sub2', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le',
                        'brand_le', 'name_int_seq', 'desc_int_seq', 'desc_len', 'name_len', 'desc_npc_cnt']
         for col in self.train_df.columns:
             if col not in useful_cols:

@@ -68,13 +68,13 @@ elapsed = time_measure("load data", start, elapsed)
 train_df = train_df.drop(train_df[(train_df.price < 3.0)].index)
 print('After drop pricee < 3.0{}'.format(train_df.shape))
 
-
+rm_2_jiage = re.compile(r"\[rm\]")
+no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
 def fill_item_description_null(str_desc, replace):
     if pd.isnull(str_desc):
         return replace
     else:
-        changeRM = re.sub(pattern=r'\[rm\]', repl='jiagejine', string=str_desc)
-        no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
+        changeRM = re.sub(pattern=rm_2_jiage, repl='jiagejine', string=str_desc)
         left = re.sub(pattern=no_mean, repl='', string=changeRM)
         if len(left) > 2:
             return left
@@ -85,21 +85,17 @@ test_df.loc[:, 'item_description'] = test_df['item_description'].map(lambda x: f
 elapsed = time_measure("item_description fill_", start, elapsed)
 
 
+npc_patten = re.compile(r'!')  # '!+'
 # handling categorical variables
-def wordCount(text):
+def patten_count(text, patten_):
     try:
-        if text == '':
-            return 0
-        else:
-            text = text.lower()
-            words = [w for w in text.split(" ")]
-            return len(words)
+        # text = text.lower()
+        return len(patten_.findall(text))
     except:
         return 0
-train_df['desc_len'] = train_df['item_description'].apply(lambda x: wordCount(x))
-test_df['desc_len'] = test_df['item_description'].apply(lambda x: wordCount(x))
-train_df['name_len'] = train_df['name'].apply(lambda x: wordCount(x))
-test_df['name_len'] = test_df['name'].apply(lambda x: wordCount(x))
+train_df['desc_npc_cnt'] = train_df['item_description'].apply(lambda x: patten_count(x, npc_patten))
+test_df['desc_npc_cnt'] = test_df['item_description'].apply(lambda x: patten_count(x, npc_patten))
+elapsed = time_measure("Statistic NPC count", start, elapsed)
 
 #splitting category_name into subcategories
 train_df.category_name.fillna(value="missing/missing/missing", inplace=True)
@@ -234,12 +230,20 @@ print("Transforming text data to sequences...")
 raw_text = np.hstack([full_df.item_description.str.lower(), full_df.name.str.lower(), full_df.category_name.str.lower()])
 
 print("Fitting tokenizer...")
-tok_raw = Tokenizer()
+tok_raw = Tokenizer()  # 使用filter然后split。会导致T-Shirt，hi-tech这种词被误操作
 tok_raw.fit_on_texts(raw_text)
 
 print("Transforming text to sequences...")
 full_df['seq_item_description'] = tok_raw.texts_to_sequences(full_df.item_description.str.lower())
 full_df['seq_name'] = tok_raw.texts_to_sequences(full_df.name.str.lower())
+full_df['desc_len'] = full_df['seq_item_description'].apply(len)
+train_df['desc_len'] = full_df[:n_trains]['desc_len']
+dev_df['desc_len'] = full_df[n_trains:n_trains+n_devs]['desc_len']
+test_df['desc_len'] = full_df[n_trains+n_devs:]['desc_len']
+full_df['name_len'] = full_df['seq_name'].apply(len)
+train_df['name_len'] = full_df[:n_trains]['name_len']
+dev_df['name_len'] = full_df[n_trains:n_trains+n_devs]['name_len']
+test_df['name_len'] = full_df[n_trains+n_devs:]['name_len']
 del tok_raw
 elapsed = time_measure("tok_raw.texts_to_sequences(name & desc)", start, elapsed)
 
@@ -255,6 +259,7 @@ MAX_BRAND = np.max(full_df.brand_name.max()) + 1
 MAX_CONDITION = np.max(full_df.item_condition_id.max()) + 1
 MAX_DESC_LEN = np.max(full_df.desc_len.max()) + 1
 MAX_NAME_LEN = np.max(full_df.name_len.max()) + 1
+MAX_NPC_LEN = np.max(full_df.desc_npc_cnt.max()) + 1
 MAX_SUBCAT_0 = np.max(full_df.subcat_0.max()) + 1
 MAX_SUBCAT_1 = np.max(full_df.subcat_1.max()) + 1
 MAX_SUBCAT_2 = np.max(full_df.subcat_2.max()) + 1
@@ -270,6 +275,7 @@ def get_rnn_data(dataset):
         'num_vars': np.array(dataset[["shipping"]]),
         'desc_len': np.array(dataset[["desc_len"]]),
         'name_len': np.array(dataset[["name_len"]]),
+        'desc_npc_cnt': np.array(dataset[["desc_npc_cnt"]]),
         'subcat_0': np.array(dataset.subcat_0),
         'subcat_1': np.array(dataset.subcat_1),
         'subcat_2': np.array(dataset.subcat_2),
@@ -310,6 +316,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     num_vars = Input(shape=[X_train["num_vars"].shape[1]], name="num_vars")
     desc_len = Input(shape=[1], name="desc_len")
     name_len = Input(shape=[1], name="name_len")
+    desc_npc_cnt = Input(shape=[1], name="desc_npc_cnt")
     subcat_0 = Input(shape=[1], name="subcat_0")
     subcat_1 = Input(shape=[1], name="subcat_1")
     subcat_2 = Input(shape=[1], name="subcat_2")
@@ -321,6 +328,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     emb_item_condition = Embedding(MAX_CONDITION, 5)(item_condition)
     emb_desc_len = Embedding(MAX_DESC_LEN, 5)(desc_len)
     emb_name_len = Embedding(MAX_NAME_LEN, 5)(name_len)
+    emb_desc_npc_cnt = Embedding(MAX_NPC_LEN, 5)(desc_npc_cnt)
     emb_subcat_0 = Embedding(MAX_SUBCAT_0, 10)(subcat_0)
     emb_subcat_1 = Embedding(MAX_SUBCAT_1, 10)(subcat_1)
     emb_subcat_2 = Embedding(MAX_SUBCAT_2, 10)(subcat_2)
@@ -335,6 +343,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
         Flatten()(emb_item_condition),
         Flatten()(emb_desc_len),
         Flatten()(emb_name_len),
+        Flatten()(emb_desc_npc_cnt),
         Flatten()(emb_subcat_0),
         Flatten()(emb_subcat_1),
         Flatten()(emb_subcat_2),
@@ -353,7 +362,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     output = Dense(1, activation="linear")(main_l)
 
     model = Model([name, item_desc, brand_name, item_condition,
-                   num_vars, desc_len, name_len, subcat_0, subcat_1, subcat_2], output)
+                   num_vars, desc_len, name_len, desc_npc_cnt, subcat_0, subcat_1, subcat_2], output)
 
     optimizer = Adam(lr=lr, decay=decay)
 
@@ -418,6 +427,7 @@ full_df['shipping'] = full_df['shipping'].astype(str)
 full_df['item_condition_id'] = full_df['item_condition_id'].astype(str)
 full_df['desc_len'] = full_df['desc_len'].astype(str)
 full_df['name_len'] = full_df['name_len'].astype(str)
+full_df['desc_npc_cnt'] = full_df['desc_npc_cnt'].astype(str)
 full_df['item_description'] = full_df['item_description'].fillna('No description yet').astype(str)
 
 
@@ -456,6 +466,9 @@ vectorizer = FeatureUnion([
     ('name_len', CountVectorizer(
         token_pattern='\d+',
         preprocessor=build_preprocessor('name_len'))),
+    ('desc_npc_cnt', CountVectorizer(
+        token_pattern='\d+',
+        preprocessor=build_preprocessor('desc_npc_cnt'))),
     ('item_description', TfidfVectorizer(
         ngram_range=(1, 3),
         max_features=100000,

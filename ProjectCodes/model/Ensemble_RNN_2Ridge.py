@@ -70,14 +70,20 @@ print('After drop pricee < 3.0{}'.format(train_df.shape))
 
 rm_2_jiage = re.compile(r"\[rm\]")
 no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
+stop_patten = re.compile(r'\b(' + r'|'.join(stopwords.words('english')) + r')\b\s*')
+word_patten = re.compile(r"(\w+(-\w+)+|\w+(\.\w+)+|\w+'\w+|\w+|!+)")
+def normal_desc(desc):
+    rm_stop = stop_patten.sub('', desc.lower())
+    normal_text = " ".join(list(map(lambda x:x[0], word_patten.findall(rm_stop))))
+    return normal_text
 def fill_item_description_null(str_desc, replace):
     if pd.isnull(str_desc):
         return replace
     else:
         changeRM = re.sub(pattern=rm_2_jiage, repl='jiagejine', string=str_desc)
-        left = re.sub(pattern=no_mean, repl='', string=changeRM)
+        left = re.sub(pattern=no_mean, repl=replace, string=changeRM)
         if len(left) > 2:
-            return left
+            return normal_desc(left)
         else:
             return replace
 train_df.loc[:, 'item_description'] = train_df['item_description'].map(lambda x: fill_item_description_null(x, ''))
@@ -230,7 +236,7 @@ print("Transforming text data to sequences...")
 raw_text = np.hstack([full_df.item_description.str.lower(), full_df.name.str.lower(), full_df.category_name.str.lower()])
 
 print("Fitting tokenizer...")
-tok_raw = Tokenizer()  # 使用filter然后split。会导致T-Shirt，hi-tech这种词被误操作
+tok_raw = Tokenizer(filters='\t\n')  # 使用filter然后split。会导致T-Shirt，hi-tech这种词被误操作
 tok_raw.fit_on_texts(raw_text)
 
 print("Transforming text to sequences...")
@@ -428,7 +434,7 @@ full_df['item_condition_id'] = full_df['item_condition_id'].astype(str)
 full_df['desc_len'] = full_df['desc_len'].astype(str)
 full_df['name_len'] = full_df['name_len'].astype(str)
 full_df['desc_npc_cnt'] = full_df['desc_npc_cnt'].astype(str)
-full_df['item_description'] = full_df['item_description'].fillna('No description yet').astype(str)
+# full_df['item_description'] = full_df['item_description'].fillna('No description yet').astype(str)
 
 
 print("Vectorizing data for Ridge Modeling...")
@@ -470,6 +476,7 @@ vectorizer = FeatureUnion([
         token_pattern='\d+',
         preprocessor=build_preprocessor('desc_npc_cnt'))),
     ('item_description', TfidfVectorizer(
+        token_pattern=r"(\w+(-\w+)+|\w+(\.\w+)+|\w+'\w+|\w+|!+)",
         ngram_range=(1, 3),
         max_features=100000,
         preprocessor=build_preprocessor('item_description'))),

@@ -21,6 +21,7 @@ from sklearn.preprocessing import LabelBinarizer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from keras.preprocessing.text import Tokenizer
+from nltk.corpus import stopwords
 
 np.random.seed(123)
 
@@ -235,14 +236,22 @@ class DataReader():
         train_df = train_df.loc[train_df_no_id.index]
 
 
+        rm_2_jiage = re.compile(r"\[rm\]")
+        no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
+        stop_patten = re.compile(r'\b(' + r'|'.join(stopwords.words('english')) + r')\b\s*')
+        word_patten = re.compile(r"(\w+(-\w+)+|\w+(\.\w+)+|\w+'\w+|\w+|!+)")
+        def normal_desc(desc):
+            rm_stop = stop_patten.sub('', desc.lower())
+            normal_text = " ".join(list(map(lambda x: x[0], word_patten.findall(rm_stop))))
+            return normal_text
         def fill_item_description_null(str_desc, replace):
             if pd.isnull(str_desc):
                 return replace
             else:
-                no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
-                left = re.sub(pattern=no_mean, repl='', string=str_desc)
+                changeRM = re.sub(pattern=rm_2_jiage, repl='jiagejine', string=str_desc)
+                left = re.sub(pattern=no_mean, repl=replace, string=changeRM)
                 if len(left) > 2:
-                    return left
+                    return normal_desc(left)
                 else:
                     return replace
         if item_desc_fill_type == 'fill_':
@@ -515,7 +524,7 @@ class DataReader():
         """
         将文本列分词并转编码，构成编码list
         """
-        tok_raw = Tokenizer()  # 分割文本成词，然后将词转成编码(先分词，后编码, 编码从1开始)
+        tok_raw = Tokenizer(filters='\t\n')  # 分割文本成词，然后将词转成编码(先分词，后编码, 编码从1开始)
         # 这里构成raw文本的时候没有加入test数据是因为就算test中有新出现的词也不会在后续训练中改变词向量
         raw_text = np.hstack([self.train_df['item_description'].str.lower(),
                               self.test_df['item_description'].str.lower(),
@@ -658,6 +667,7 @@ class DataReader():
                 token_pattern='\d+',
                 preprocessor=build_preprocessor('name_len'))),
             ('item_description', TfidfVectorizer(
+                token_pattern=r"(\w+(-\w+)+|\w+(\.\w+)+|\w+'\w+|\w+|!+)",
                 ngram_range=(1, 3),
                 max_features=100000,
                 preprocessor=build_preprocessor('item_description'))),

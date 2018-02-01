@@ -268,31 +268,15 @@ class DataReader():
 
 
         # 统计下description中特殊字符的个数
-        def len_of_not_w(str_from):
-            if isinstance(str_from, str):
-                W_finder = re.compile('\W')
-                return len(W_finder.findall(str_from))
-            else:
-                return 0
-
-        # handling categorical variables
-        def wordCount(text):
+        npc_patten = re.compile(r'!')  # '!+'
+        def patten_count(text, patten_):
             try:
-                if text in ['No description yet', '', 'paulnull']:
-                    return 0
-                else:
-                    text = text.lower()
-                    words = [w for w in text.split(" ")]
-                    return len(words)
+                # text = text.lower()
+                return len(patten_.findall(text))
             except:
                 return 0
-
-        train_df['desc_len'] = train_df['item_description'].apply(lambda x: wordCount(x))
-        test_df['desc_len'] = test_df['item_description'].apply(lambda x: wordCount(x))
-        train_df['name_len'] = train_df['name'].apply(lambda x: wordCount(x))
-        test_df['name_len'] = test_df['name'].apply(lambda x: wordCount(x))
-        # train_df['desc_W_len'] = train_df['item_description'].map(len_of_not_w)
-        # test_df['desc_W_len'] = test_df['item_description'].map(len_of_not_w)
+        train_df['desc_npc_cnt'] = train_df['item_description'].map(lambda x: patten_count(x, npc_patten))
+        test_df['desc_npc_cnt'] = test_df['item_description'].map(lambda x: patten_count(x, npc_patten))
 
 
         # [先把能补充确定的brand填充上，然后再find brand]
@@ -490,7 +474,7 @@ class DataReader():
         self.n_condition_id = 0
         self.n_name_max_len = 0
         self.n_desc_max_len = 0
-        self.n_desc_W_max_len = 0
+        self.n_npc_max_cnt = 0
 
     def le_encode(self):
         le = LabelEncoder()  # 给字符串或者其他对象编码, 从0开始编码
@@ -541,6 +525,10 @@ class DataReader():
         self.test_df["name_int_seq"] = tok_raw.texts_to_sequences(self.test_df.name.str.lower())
         self.train_df["desc_int_seq"] = tok_raw.texts_to_sequences(self.train_df.item_description.str.lower())
         self.test_df["desc_int_seq"] = tok_raw.texts_to_sequences(self.test_df.item_description.str.lower())
+        self.train_df['name_len'] = self.train_df['name_int_seq'].apply(len)
+        self.test_df['name_len'] = self.test_df['name_int_seq'].apply(len)
+        self.train_df['desc_len'] = self.train_df['desc_int_seq'].apply(len)
+        self.test_df['desc_len'] = self.test_df['desc_int_seq'].apply(len)
 
         del tok_raw
 
@@ -567,7 +555,7 @@ class DataReader():
         self.n_condition_id = np.max([self.train_df.item_condition_id.max(), self.test_df.item_condition_id.max()])+1
         self.n_desc_max_len = np.max([self.train_df.desc_len.max(), self.test_df.desc_len.max()]) + 1
         self.n_name_max_len = np.max([self.train_df.name_len.max(), self.test_df.name_len.max()]) + 1
-        # self.n_desc_W_max_len = np.max([self.train_df.desc_W_len.max(), self.test_df.desc_W_len.max()]) + 1
+        self.n_npc_max_cnt = np.max(self.train_df.desc_npc_cnt.max(), self.test_df.desc_npc_cnt.max()) + 1
 
     def split_get_train_validation(self):
         """
@@ -600,14 +588,14 @@ class DataReader():
             'num_vars': np.array(dataset[['shipping']]),
             'desc_len': np.array(dataset[["desc_len"]]),
             'name_len': np.array(dataset[["name_len"]]),
-            # 'desc_W_len': np.array(dataset[["desc_W_len"]]),
+            'desc_npc_cnt': np.array(dataset[["desc_npc_cnt"]]),
         }
         return X
 
     def del_redundant_cols(self):
         useful_cols = ['train_id', 'test_id', 'name', 'item_condition_id', 'category_name', 'brand_name', 'price', 'shipping', 'item_description',
                        'category_le', 'cat_name_main', 'cat_name_sub', 'cat_name_sub2', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le',
-                       'brand_le', 'name_int_seq', 'desc_int_seq', 'desc_len', 'name_len']  # , 'desc_W_len'
+                       'brand_le', 'name_int_seq', 'desc_int_seq', 'desc_len', 'name_len', 'desc_npc_cnt']
         for col in self.train_df.columns:
             if col not in useful_cols:
                 del self.train_df[col]
@@ -626,6 +614,7 @@ class DataReader():
             dataset['item_condition_id'] = dataset['item_condition_id'].astype(str)
             dataset['desc_len'] = dataset['desc_len'].astype(str)
             dataset['name_len'] = dataset['name_len'].astype(str)
+            dataset['desc_npc_cnt'] = dataset['desc_npc_cnt'].astype(str)
         cols_astype_to_str(self.train_df)
         cols_astype_to_str(self.test_df)
 
@@ -666,6 +655,9 @@ class DataReader():
             ('name_len', CountVectorizer(
                 token_pattern='\d+',
                 preprocessor=build_preprocessor('name_len'))),
+            ('desc_npc_cnt', CountVectorizer(
+                token_pattern='\d+',
+                preprocessor=build_preprocessor('desc_npc_cnt'))),
             ('item_description', TfidfVectorizer(
                 token_pattern=r"(\w+(-\w+)+|\w+(\.\w+)+|\w+'\w+|\w+|!+)",
                 ngram_range=(1, 3),

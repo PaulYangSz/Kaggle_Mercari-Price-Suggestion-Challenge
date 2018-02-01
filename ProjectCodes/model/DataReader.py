@@ -236,14 +236,17 @@ class DataReader():
         train_df = train_df.loc[train_df_no_id.index]
 
 
-        rm_2_jiage = re.compile(r"\[rm\]")
-        no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
         stop_patten = re.compile(r'\b(' + r'|'.join(stopwords.words('english')) + r')\b\s*')
         word_patten = re.compile(r"(\w+(-\w+)+|\w+(\.\w+)+|\w+'\w+|\w+|!+)")
         def normal_desc(desc):
             rm_stop = stop_patten.sub('', desc.lower())
             normal_text = " ".join(list(map(lambda x: x[0], word_patten.findall(rm_stop))))
             return normal_text
+        train_df.loc[:, 'name'] = train_df['name'].map(normal_desc)
+        test_df.loc[:, 'name'] = test_df['name'].map(normal_desc)
+
+        rm_2_jiage = re.compile(r"\[rm\]")
+        no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
         def fill_item_description_null(str_desc, replace):
             if pd.isnull(str_desc):
                 return replace
@@ -502,12 +505,10 @@ class DataReader():
         """
         将文本列分词并转编码，构成编码list
         """
-        tok_raw = Tokenizer(filters='\t\n')  # 分割文本成词，然后将词转成编码(先分词，后编码, 编码从1开始)
+        tok_raw = Tokenizer(num_words=300000, filters='"#$%&()*+,/:;<=>?@[\\]^_`{|}~\t\n')  # 分割文本成词，然后将词转成编码(先分词，后编码, 编码从1开始)
         # 这里构成raw文本的时候没有加入test数据是因为就算test中有新出现的词也不会在后续训练中改变词向量
         raw_text = np.hstack([self.train_df['item_description'].str.lower(),
                               self.test_df['item_description'].str.lower(),
-                              self.train_df['category_name'].str.lower(),
-                              self.test_df['category_name'].str.lower(),
                               self.train_df['name'].str.lower(),
                               self.test_df['name'].str.lower()])
         tok_raw.fit_on_texts(raw_text)
@@ -548,6 +549,8 @@ class DataReader():
         self.n_condition_id = np.max([self.train_df.item_condition_id.max(), self.test_df.item_condition_id.max()])+1
         self.n_desc_max_len = np.max([self.train_df.desc_len.max(), self.test_df.desc_len.max()]) + 1
         self.n_name_max_len = np.max([self.train_df.name_len.max(), self.test_df.name_len.max()]) + 1
+        print("self.train_df.desc_npc_cnt.max() =", self.train_df.desc_npc_cnt.max())
+        print("self.test_df.desc_npc_cnt.max() =", self.test_df.desc_npc_cnt.max())
         self.n_npc_max_cnt = np.max([self.train_df.desc_npc_cnt.max(), self.test_df.desc_npc_cnt.max()]) + 1
 
     def split_get_train_validation(self):

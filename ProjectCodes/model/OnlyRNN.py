@@ -127,6 +127,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.drop_out_layers = drop_out_layers
         self.dense_layers_dim = dense_layers_dim
         self.emb_GRU_model = self.get_GRU_model(data_reader)
+        self.emb_GRU_model.summary(print_fn=RECORD_LOG)
         self.epochs = epochs
         self.batch_size = batch_size
         self.lr_init = lr_init
@@ -154,6 +155,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         # Embedding的作用是配置字典size和词向量len后，根据call参数的indices，返回词向量.
         #  类似TF的embedding_lookup
         #  name.shape=[None, MAX_NAME_SEQ] -> emb_name.shape=[None, MAX_NAME_SEQ, output_dim]
+        # todo: 是否name和item_desciption的Embedding要共用? (词向量输出的维度不一样不能共用)
         emb_name = Embedding(input_dim=reader.n_text_dict_words, output_dim=self.name_emb_dim)(name)
         emb_item_desc = Embedding(reader.n_text_dict_words, self.item_desc_emb_dim)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
         emb_cond_id = Embedding(reader.n_condition_id, self.item_cond_id_emb_dim)(item_condition)

@@ -233,15 +233,18 @@ elapsed = time_measure("LabelEncoder(brand_name & subcat0/1/2)", start, elapsed)
 
 
 print("Transforming text data to sequences...")
-raw_text = np.hstack([full_df.item_description.str.lower(), full_df.name.str.lower(), full_df.category_name.str.lower()])
+name_raw_text = np.hstack([full_df.name.str.lower()])
+desc_raw_text = np.hstack([full_df.item_description.str.lower()])
 
 print("Fitting tokenizer...")
-tok_raw = Tokenizer(filters='\t\n')  # 使用filter然后split。会导致T-Shirt，hi-tech这种词被误操作
-tok_raw.fit_on_texts(raw_text)
+name_tok_raw = Tokenizer(num_words=100000, filters='"#$%&()*+,/:;<=>?@[\\]^_`{|}~\t\n')
+desc_tok_raw = Tokenizer(num_words=300000, filters='\t\n')  # 使用filter然后split。会导致T-Shirt，hi-tech这种词被误操作
+name_tok_raw.fit_on_texts(name_raw_text)
+desc_tok_raw.fit_on_texts(desc_raw_text)
 
 print("Transforming text to sequences...")
-full_df['seq_item_description'] = tok_raw.texts_to_sequences(full_df.item_description.str.lower())
-full_df['seq_name'] = tok_raw.texts_to_sequences(full_df.name.str.lower())
+full_df['seq_item_description'] = desc_tok_raw.texts_to_sequences(full_df.item_description.str.lower())
+full_df['seq_name'] = name_tok_raw.texts_to_sequences(full_df.name.str.lower())
 full_df['desc_len'] = full_df['seq_item_description'].apply(len)
 train_df['desc_len'] = full_df[:n_trains]['desc_len']
 dev_df['desc_len'] = full_df[n_trains:n_trains+n_devs]['desc_len']
@@ -250,7 +253,6 @@ full_df['name_len'] = full_df['seq_name'].apply(len)
 train_df['name_len'] = full_df[:n_trains]['name_len']
 dev_df['name_len'] = full_df[n_trains:n_trains+n_devs]['name_len']
 test_df['name_len'] = full_df[n_trains+n_devs:]['name_len']
-del tok_raw
 elapsed = time_measure("tok_raw.texts_to_sequences(name & desc)", start, elapsed)
 
 
@@ -258,9 +260,9 @@ elapsed = time_measure("tok_raw.texts_to_sequences(name & desc)", start, elapsed
 MAX_NAME_SEQ = 10
 MAX_ITEM_DESC_SEQ = 75
 MAX_CATEGORY_SEQ = 8
-MAX_TEXT = np.max([np.max(full_df.seq_name.max()),
-                   np.max(full_df.seq_item_description.max()),
-                   ]) + 100
+MAX_NAME_DICT_WORDS = max(name_raw_text.word_index.values()) + 2
+MAX_DESC_DICT_WORDS = max(desc_raw_text.word_index.values()) + 2
+del name_raw_text, desc_raw_text
 MAX_BRAND = np.max(full_df.brand_name.max()) + 1
 MAX_CONDITION = np.max(full_df.item_condition_id.max()) + 1
 MAX_DESC_LEN = np.max(full_df.desc_len.max()) + 1
@@ -328,8 +330,8 @@ def new_rnn_model(lr=0.001, decay=0.0):
     subcat_2 = Input(shape=[1], name="subcat_2")
 
     # Embeddings layers (adjust outputs to help model)
-    emb_name = Embedding(MAX_TEXT, 20)(name)
-    emb_item_desc = Embedding(MAX_TEXT, 60)(item_desc)
+    emb_name = Embedding(MAX_NAME_DICT_WORDS, 20)(name)
+    emb_item_desc = Embedding(MAX_DESC_DICT_WORDS, 60)(item_desc)
     emb_brand_name = Embedding(MAX_BRAND, 10)(brand_name)
     emb_item_condition = Embedding(MAX_CONDITION, 5)(item_condition)
     emb_desc_len = Embedding(MAX_DESC_LEN, 5)(desc_len)

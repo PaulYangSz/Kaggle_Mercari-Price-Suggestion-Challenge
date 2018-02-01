@@ -30,6 +30,7 @@ import math
 # set seed
 np.random.seed(123)
 
+USE_NAME_BRAND_MAP = True
 RNN_VERBOSE = 10
 EXPM1_before_MUL_Best12_Flag = True
 SPEED_UP = False
@@ -81,6 +82,7 @@ def fill_item_description_null(str_desc, replace):
             return replace
 train_df.loc[:, 'item_description'] = train_df['item_description'].map(lambda x: fill_item_description_null(x, ''))
 test_df.loc[:, 'item_description'] = test_df['item_description'].map(lambda x: fill_item_description_null(x, ''))
+elapsed = time_measure("item_description fill_", start, elapsed)
 
 
 # handling categorical variables
@@ -100,37 +102,100 @@ train_df['name_len'] = train_df['name'].apply(lambda x: wordCount(x))
 test_df['name_len'] = test_df['name'].apply(lambda x: wordCount(x))
 
 #splitting category_name into subcategories
-train_df.category_name.fillna(value="paulnull/paulnull/paulnull", inplace=True)
-test_df.category_name.fillna(value="paulnull/paulnull/paulnull", inplace=True)
+train_df.category_name.fillna(value="missing/missing/missing", inplace=True)
+test_df.category_name.fillna(value="missing/missing/missing", inplace=True)
 def split_cat(text):
     try: return text.split("/")
-    except: return ("paulnull", "paulnull", "paulnull")
+    except: return ("missing", "missing", "missing")
 train_df['subcat_0'], train_df['subcat_1'], train_df['subcat_2'] = zip(*train_df['category_name'].apply(lambda x: split_cat(x)))
 test_df['subcat_0'], test_df['subcat_1'], test_df['subcat_2'] = zip(*test_df['category_name'].apply(lambda x: split_cat(x)))
+elapsed = time_measure("wordCount() and split_cat()", start, elapsed)
 
 #combine the train and test dataframes
 full_set = pd.concat([train_df,test_df])
-#handling brand_name
-all_brands = set(full_set['brand_name'].values)
-#fill NA values
-train_df.brand_name.fillna(value="missing", inplace=True)
-test_df.brand_name.fillna(value="missing", inplace=True)
-premissing = len(train_df.loc[train_df['brand_name'] == 'missing'])
-def brandfinder(line):
-    brand = line[0]
-    name = line[1]
-    namesplit = name.split(' ')
-    if brand == 'missing':
-        for x in namesplit:
-            if x in all_brands:
-                return name
-    if name in all_brands:
-        return name
-    return brand
-train_df['brand_name'] = train_df[['brand_name','name']].apply(brandfinder, axis = 1)
-test_df['brand_name'] = test_df[['brand_name','name']].apply(brandfinder, axis = 1)
-found = premissing-len(train_df.loc[train_df['brand_name'] == 'missing'])
+if USE_NAME_BRAND_MAP:
+    def do_col2brand_dict(data_df: pd.DataFrame, key_col: str):
+        group_by_key_to_brandset_ser = data_df['brand_name'].groupby(data_df[key_col]).apply(lambda x: set(x.values))
+        only_one_brand_ser = group_by_key_to_brandset_ser[group_by_key_to_brandset_ser.map(len) == 1]
+        return only_one_brand_ser.map(lambda x: x.pop()).to_dict()
+
+
+    def get_brand_by_key(key, map):
+        if key in map:
+            return map[key]
+        else:
+            return 'paulnull'
+
+
+    col_key = 'name'
+    have_brand_df = full_set[~full_set['brand_name'].isnull()].copy()
+    train_brand_null_index = train_df[train_df['brand_name'].isnull()].index
+    test_brand_null_index = test_df[test_df['brand_name'].isnull()].index
+    key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
+    train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(
+        lambda x: get_brand_by_key(x, key2brand_map))
+    test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(
+        lambda x: get_brand_by_key(x, key2brand_map))
+    n_before = train_brand_null_index.size + test_brand_null_index.size
+    n_after = (train_df['brand_name'] == 'paulnull').sum() + (test_df['brand_name'] == 'paulnull').sum()
+    elapsed = time_measure("Use name -> brand Map", start, elapsed)
+    print('填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
+
+    # handling brand_name
+    all_brands = set(have_brand_df['brand_name'].values)
+    del have_brand_df
+    premissing = len(train_df.loc[train_df['brand_name'] == 'paulnull'])
+
+
+    def brandfinder(line):
+        """
+        如果name含有brand信息，那么就用name代替brand
+        :param line:
+        :return:
+        """
+        brand = line[0]
+        name = line[1]
+        namesplit = name.split(' ')
+        # TODO: 考虑下不管brand是否存在，都用name替换
+        if brand == 'paulnull':
+            for x in namesplit:
+                if x in all_brands:
+                    return name
+        if name in all_brands:
+            return name
+        return brand
+
+
+    train_df['brand_name'] = train_df[['brand_name', 'name']].apply(brandfinder, axis=1)
+    test_df['brand_name'] = test_df[['brand_name', 'name']].apply(brandfinder, axis=1)
+    found = premissing - len(train_df.loc[train_df['brand_name'] == 'paulnull'])
+    elapsed = time_measure("brandfinder()", start, elapsed)
+else:
+    #handling brand_name
+    all_brands = set(full_set['brand_name'].values)
+    #fill NA values
+    train_df.brand_name.fillna(value="missing", inplace=True)
+    test_df.brand_name.fillna(value="missing", inplace=True)
+    premissing = len(train_df.loc[train_df['brand_name'] == 'missing'])
+    def brandfinder(line):
+        brand = line[0]
+        name = line[1]
+        namesplit = name.split(' ')
+        if brand == 'missing':
+            for x in namesplit:
+                if x in all_brands:
+                    return name
+        if name in all_brands:
+            return name
+        return brand
+    train_df['brand_name'] = train_df[['brand_name','name']].apply(brandfinder, axis = 1)
+    test_df['brand_name'] = test_df[['brand_name','name']].apply(brandfinder, axis = 1)
+    found = premissing-len(train_df.loc[train_df['brand_name'] == 'missing'])
+    elapsed = time_measure("brandfinder()", start, elapsed)
 print(found)
+del full_set
+gc.collect()
+
 
 # Scale target variable-price to log
 train_df["target"] = np.log1p(train_df.price)
@@ -143,7 +208,7 @@ n_tests = test_df.shape[0]
 print("Training on:", n_trains, "examples")
 print("Validating on:", n_devs, "examples")
 print("Testing on:", n_tests, "examples")
-elapsed = time_measure("word len; cat split; find brand; target & train_test_split", start, elapsed)
+elapsed = time_measure("target & train_test_split", start, elapsed)
 
 
 # Concatenate train - dev - test data for easy to handle
@@ -333,7 +398,7 @@ print(" RMSLE error:", rmsle(Y_dev, Y_dev_preds_rnn))
 
 
 #prediction for test data
-rnn_preds = rnn_model.predict(X_test, batch_size=BATCH_SIZE, verbose=1)
+rnn_preds = rnn_model.predict(X_test, batch_size=BATCH_SIZE, verbose=RNN_VERBOSE)
 if EXPM1_before_MUL_Best12_Flag:
     rnn_preds = np.expm1(rnn_preds)
 elapsed = time_measure("rnn_model.predict()", start, elapsed)
@@ -344,11 +409,11 @@ elapsed = time_measure("rnn_model.predict()", start, elapsed)
 full_df = pd.concat([train_df, dev_df, test_df])
 
 
-print("Handling missing values...")
+print("Change types as str for CountVectorizer/TfidfVectorizer ...")
 full_df['subcat_0'] = full_df['subcat_0'].astype(str)
 full_df['subcat_1'] = full_df['subcat_1'].astype(str)
 full_df['subcat_2'] = full_df['subcat_2'].astype(str)
-full_df['brand_name'] = full_df['brand_name'].fillna('missing').astype(str)
+full_df['brand_name'] = full_df['brand_name'].astype(str)
 full_df['shipping'] = full_df['shipping'].astype(str)
 full_df['item_condition_id'] = full_df['item_condition_id'].astype(str)
 full_df['desc_len'] = full_df['desc_len'].astype(str)

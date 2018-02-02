@@ -113,7 +113,7 @@ test_df.loc[:, 'name'] = test_df['name'].map(normal_name)
 elapsed = time_measure("normal_name without stopwords ", start, elapsed)
 
 
-npc_patten = re.compile(r'!+')  # TODO: '!+'
+npc_patten = re.compile(r'!')
 # handling categorical variables
 def patten_count(text, patten_):
     try:

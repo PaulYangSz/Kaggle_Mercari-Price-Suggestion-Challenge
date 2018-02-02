@@ -16,7 +16,7 @@ from sklearn.linear_model import RidgeCV
 from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, median_absolute_error
 from sklearn.metrics import r2_score
-from sklearn.model_selection import GridSearchCV, KFold
+from sklearn.model_selection import GridSearchCV, KFold, RandomizedSearchCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import train_test_split
 from sklearn.utils.estimator_checks import check_estimator
@@ -122,38 +122,38 @@ def get_cv_result_df(cv_results_:dict, adjust_paras:list, n_cv):
     return pd.DataFrame(data={key: cv_results_[key] for key in cols}, columns=cols)
 
 
-def show_CV_result(reg:GridSearchCV, adjust_paras, classifi_scoring):
+def show_CV_result(search_reg, adjust_paras, classifi_scoring):
     # pprint(reg.cv_results_)
     RECORD_LOG('XXXXX查看CV的结果XXXXXX')
     RECORD_LOG(
-        '{}: MAX of mean_test_score = {}'.format(classifi_scoring, reg.cv_results_.get('mean_test_score').max()))
+        '{}: MAX of mean_test_score = {}'.format(classifi_scoring, search_reg.cv_results_.get('mean_test_score').max()))
     RECORD_LOG(
-        '{}: MAX of mean_train_score = {}'.format(classifi_scoring, reg.cv_results_.get('mean_train_score').max()))
-    cv_result_df = get_cv_result_df(reg.cv_results_, adjust_paras, reg.cv.n_splits)
+        '{}: MAX of mean_train_score = {}'.format(classifi_scoring, search_reg.cv_results_.get('mean_train_score').max()))
+    cv_result_df = get_cv_result_df(search_reg.cv_results_, adjust_paras, search_reg.cv.n_splits)
     with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
         RECORD_LOG('\n对各组调参参数的交叉训练验证细节为：\n{}'.format(cv_result_df))
     if len(adjust_paras) == 1 and platform.system() == 'Windows':
         every_para_score = pd.Series()
         every_para_score.name = adjust_paras[0]
-    for i in range(len(reg.cv_results_.get('mean_test_score'))):
+    for i in range(len(search_reg.cv_results_.get('mean_test_score'))):
         # RECORD_LOG('+++++++++++')
         # RECORD_LOG('mean_test_score = {}'.format(reg.cv_results_.get('mean_test_score')[i]))
         # RECORD_LOG('mean_train_score = {}'.format(reg.cv_results_.get('mean_train_score')[i]))
         param_str = "{"
         for k in adjust_paras:
-            param_str += "'{}': {}, ".format(k, reg.cv_results_.get('params')[i][k])
+            param_str += "'{}': {}, ".format(k, search_reg.cv_results_.get('params')[i][k])
         param_str = param_str[:-2] + "}"
         # RECORD_LOG('params = {}'.format(param_str))
         if len(adjust_paras) == 1 and platform.system() == 'Windows':
-            record_param_value = reg.cv_results_.get('params')[i].get(adjust_paras[0])
+            record_param_value = search_reg.cv_results_.get('params')[i].get(adjust_paras[0])
             if isinstance(record_param_value, tuple):
                 record_param_value = '{}'.format(reduce(lambda n_h, n_h1: str(n_h) + '_' + str(n_h1), record_param_value))
-            every_para_score.loc[record_param_value] = reg.cv_results_.get('mean_test_score')[i]
-    print('best_score_ = {}'.format(reg.best_score_))
-    RECORD_LOG('reg.best_score_: %f' % reg.best_score_)
-    for param_name in sorted(reg.best_params_.keys()):
+            every_para_score.loc[record_param_value] = search_reg.cv_results_.get('mean_test_score')[i]
+    print('best_score_ = {}'.format(search_reg.best_score_))
+    RECORD_LOG('reg.best_score_: %f' % search_reg.best_score_)
+    for param_name in sorted(search_reg.best_params_.keys()):
         if param_name in adjust_paras:
-            RECORD_LOG("调参选择为%s: %r" % (param_name, reg.best_params_[param_name]))
+            RECORD_LOG("调参选择为%s: %r" % (param_name, search_reg.best_params_[param_name]))
     if len(adjust_paras) == 1 and platform.system() == 'Windows':
         every_para_score.plot(kind='line', title=u'模型参数{}和评分{}的变化图示'.format(adjust_paras[0], classifi_scoring),
                               style='o-')
@@ -206,13 +206,14 @@ if __name__ == "__main__":
         # 4. Use GridSearchCV to tuning model.
         print('Begin to train self-defined sklearn-API regressor.')
         regress_model = RidgeCV()
-        reg = GridSearchCV(estimator=regress_model,
-                           param_grid=cv_grid_params.all_params,
-                           n_jobs=N_CORE,
-                           cv=KFold(n_splits=3, shuffle=True, random_state=cv_grid_params.rand_state),
-                           scoring=cv_grid_params.scoring,
-                           verbose=2,
-                           refit=True)
+        reg = RandomizedSearchCV(estimator=regress_model,
+                                 param_distributions=cv_grid_params.all_params,
+                                 n_iter=70,
+                                 n_jobs=N_CORE,
+                                 cv=KFold(n_splits=3, shuffle=True, random_state=cv_grid_params.rand_state),
+                                 scoring=cv_grid_params.scoring,
+                                 verbose=2,
+                                 refit=True)
         reg.fit(sample_X, sample_y)
         RECORD_LOG('[{:.4f}s] Finished Grid Search and training.'.format(time.time() - start_time))
 

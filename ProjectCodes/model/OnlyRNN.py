@@ -188,7 +188,10 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
                                   num_vars])
         # Concat[all] -> Dense1 -> ... -> DenseN
         for i in range(len(self.dense_layers_dim)):
-            main_layer = Dropout(self.drop_out_layers[i])(Dense(self.dense_layers_dim[i], activation='relu')(main_layer))
+            main_layer = Dense(self.dense_layers_dim[i])(main_layer)
+            main_layer = BatchNormalization()(main_layer)
+            main_layer = Activation(activation='relu')(main_layer)
+            main_layer = Dropout(self.drop_out_layers[i])(main_layer)
 
         # output
         output = Dense(1, activation="linear")(main_layer)

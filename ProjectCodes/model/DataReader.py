@@ -555,7 +555,7 @@ class DataReader():
         # TODO: 序列长度参数可调
         self.name_seq_len = 10  # 最长17个词
         self.item_desc_seq_len = 75  # 最长269个词，90%在62个词以内
-        self.cat_name_seq_len = 8 # 最长8个词
+        self.cat_name_seq_len = 8  # 最长8个词
         self.n_cat_main = np.max([self.train_df.cat_main_le.max(), self.test_df.cat_main_le.max()]) + 1  # LE编码后最大值+1
         self.n_cat_sub = np.max([self.train_df.cat_sub_le.max(), self.test_df.cat_sub_le.max()]) + 1
         self.n_cat_sub2 = np.max([self.train_df.cat_sub2_le.max(), self.test_df.cat_sub2_le.max()]) + 1

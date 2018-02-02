@@ -657,7 +657,7 @@ class DataReader():
                 preprocessor=build_preprocessor('desc_npc_cnt'))),
             ('item_description', TfidfVectorizer(
                 token_pattern=r"(?u)\S+",
-                ngram_range=(1, 3),
+                ngram_range=(1, 2),
                 max_features=100000,
                 preprocessor=build_preprocessor('item_description'))),
         ])

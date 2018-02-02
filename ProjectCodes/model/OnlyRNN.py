@@ -156,8 +156,8 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         #  类似TF的embedding_lookup
         #  name.shape=[None, MAX_NAME_SEQ] -> emb_name.shape=[None, MAX_NAME_SEQ, output_dim]
         # todo: 是否name和item_desciption的Embedding要共用? (词向量输出的维度不一样不能共用)
-        emb_name = Embedding(input_dim=reader.n_text_dict_words, output_dim=self.name_emb_dim)(name)
-        emb_item_desc = Embedding(reader.n_text_dict_words, self.item_desc_emb_dim)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
+        emb_name = Embedding(input_dim=reader.n_name_dict_words, output_dim=self.name_emb_dim)(name)
+        emb_item_desc = Embedding(reader.n_desc_dict_words, self.item_desc_emb_dim)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
         emb_cond_id = Embedding(reader.n_condition_id, self.item_cond_id_emb_dim)(item_condition)
         emb_cat_main = Embedding(reader.n_cat_main, self.cat_main_emb_dim)(category_main)
         emb_cat_sub = Embedding(reader.n_cat_sub, self.cat_sub_emb_dim)(category_sub)

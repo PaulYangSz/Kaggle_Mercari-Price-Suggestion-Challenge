@@ -235,16 +235,20 @@ class DataReader():
         train_df_no_id = train_df_no_id.drop_duplicates()
         train_df = train_df.loc[train_df_no_id.index]
 
-
-        stop_patten = re.compile(r'\b(' + r'|'.join(stopwords.words('english')) + r')\b\s*')
+        stopwords_list = stopwords.words('english')
+        # stop_patten = re.compile(r'\b(' + r'|'.join(stopwords.words('english')) + r')\b\s*')
         word_patten = re.compile(r"(\w+(-\w+)+|\w+(\.\w+)+|\w+'\w+|\w+|!+)")
         def normal_desc(desc):
-            rm_stop = stop_patten.sub('', desc.lower())
-            normal_text = " ".join(list(map(lambda x: x[0], word_patten.findall(rm_stop))))
-            return normal_text
-        train_df.loc[:, 'name'] = train_df['name'].map(normal_desc)
-        test_df.loc[:, 'name'] = test_df['name'].map(normal_desc)
-
+            try:
+                filter_words = []
+                for tuple_words in word_patten.findall(desc):
+                    word = tuple_words[0]
+                    if word.lower() not in stopwords_list:
+                        filter_words.append(word)
+                normal_text = " ".join(filter_words)
+                return normal_text
+            except:
+                return ''
         rm_2_jiage = re.compile(r"\[rm\]")
         no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
         def fill_item_description_null(str_desc, replace):
@@ -468,7 +472,8 @@ class DataReader():
         self.name_seq_len = 0
         self.item_desc_seq_len = 0
         self.cat_name_seq_len = 0
-        self.n_text_dict_words = 0
+        self.n_name_dict_words = 0
+        self.n_desc_dict_words = 0
         self.n_cat_main = 0
         self.n_cat_sub = 0
         self.n_cat_sub2 = 0
@@ -505,27 +510,31 @@ class DataReader():
         """
         将文本列分词并转编码，构成编码list
         """
-        tok_raw = Tokenizer(num_words=300000, filters='"#$%&()*+,/:;<=>?@[\\]^_`{|}~\t\n')  # 分割文本成词，然后将词转成编码(先分词，后编码, 编码从1开始)
+        # 分割文本成词，然后将词转成编码(先分词，后编码, 编码从1开始)
+        name_tok_raw = Tokenizer(num_words=100000, filters='!"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n')
+        desc_tok_raw = Tokenizer(num_words=300000, filters='\t\n')
         # 这里构成raw文本的时候没有加入test数据是因为就算test中有新出现的词也不会在后续训练中改变词向量
-        raw_text = np.hstack([self.train_df['item_description'].str.lower(),
-                              self.test_df['item_description'].str.lower(),
-                              self.train_df['name'].str.lower(),
-                              self.test_df['name'].str.lower()])
-        tok_raw.fit_on_texts(raw_text)
-        self.n_text_dict_words = max(tok_raw.word_index.values()) + 2
+        name_raw_text = np.hstack([self.train_df['name'].str.lower(),
+                                   self.test_df['name'].str.lower()])
+        desc_raw_text = np.hstack([self.train_df['item_description'].str.lower(),
+                                   self.test_df['item_description'].str.lower()])
+        name_tok_raw.fit_on_texts(name_raw_text)
+        desc_tok_raw.fit_on_texts(desc_raw_text)
+        self.n_name_dict_words = max(name_tok_raw.word_index.values()) + 2
+        self.n_desc_dict_words = max(desc_tok_raw.word_index.values()) + 2
 
         # self.train_df["cat_int_seq"] = tok_raw.texts_to_sequences(self.train_df.category_name.str.lower())
         # self.test_df["cat_int_seq"] = tok_raw.texts_to_sequences(self.test_df.category_name.str.lower())
-        self.train_df["name_int_seq"] = tok_raw.texts_to_sequences(self.train_df.name.str.lower())
-        self.test_df["name_int_seq"] = tok_raw.texts_to_sequences(self.test_df.name.str.lower())
-        self.train_df["desc_int_seq"] = tok_raw.texts_to_sequences(self.train_df.item_description.str.lower())
-        self.test_df["desc_int_seq"] = tok_raw.texts_to_sequences(self.test_df.item_description.str.lower())
+        self.train_df["name_int_seq"] = name_tok_raw.texts_to_sequences(self.train_df.name.str.lower())
+        self.test_df["name_int_seq"] = name_tok_raw.texts_to_sequences(self.test_df.name.str.lower())
+        self.train_df["desc_int_seq"] = desc_tok_raw.texts_to_sequences(self.train_df.item_description.str.lower())
+        self.test_df["desc_int_seq"] = desc_tok_raw.texts_to_sequences(self.test_df.item_description.str.lower())
         self.train_df['name_len'] = self.train_df['name_int_seq'].apply(len)
         self.test_df['name_len'] = self.test_df['name_int_seq'].apply(len)
         self.train_df['desc_len'] = self.train_df['desc_int_seq'].apply(len)
         self.test_df['desc_len'] = self.test_df['desc_int_seq'].apply(len)
 
-        del tok_raw
+        del name_tok_raw, desc_tok_raw
 
         record_log(self.local_flag, "\ntexts_to_sequences之后train_df的列有{}".format(self.train_df.columns))
         record_log(self.local_flag, "\ntexts_to_sequences之后test_df的列有{}".format(self.test_df.columns))
@@ -535,13 +544,6 @@ class DataReader():
         self.name_seq_len = 10  # 最长17个词
         self.item_desc_seq_len = 75  # 最长269个词，90%在62个词以内
         self.cat_name_seq_len = 8 # 最长8个词
-        if self.n_text_dict_words == 0:
-            self.n_text_dict_words = np.max([self.train_df.name_int_seq.map(max).max(),
-                                             self.test_df.name_int_seq.map(max).max(),
-                                             # self.train_df.cat_int_seq.map(max).max(),
-                                             # self.test_df.cat_int_seq.map(max).max(),
-                                             self.train_df.desc_int_seq.map(max).max(),
-                                             self.test_df.desc_int_seq.map(max).max()]) + 2
         self.n_cat_main = np.max([self.train_df.cat_main_le.max(), self.test_df.cat_main_le.max()]) + 1  # LE编码后最大值+1
         self.n_cat_sub = np.max([self.train_df.cat_sub_le.max(), self.test_df.cat_sub_le.max()]) + 1
         self.n_cat_sub2 = np.max([self.train_df.cat_sub2_le.max(), self.test_df.cat_sub2_le.max()]) + 1

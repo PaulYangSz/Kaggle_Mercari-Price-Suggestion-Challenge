@@ -68,14 +68,24 @@ elapsed = time_measure("load data", start, elapsed)
 train_df = train_df.drop(train_df[(train_df.price < 3.0)].index)
 print('After drop pricee < 3.0{}'.format(train_df.shape))
 
-rm_2_jiage = re.compile(r"\[rm\]")
-no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
-stop_patten = re.compile(r'\b(' + r'|'.join(stopwords.words('english')) + r')\b\s*')
+# 品牌名中有stopwords，所以不能对name做操作，否则会影响后面的->map效果
+# stop_patten = re.compile(r'\b(' + r'|'.join(stopwords.words('english')) + r')\b\s*')  # 会把Burt's Bees匹配到
+# del stop_patten
+stopwords_list = stopwords.words('english')
 word_patten = re.compile(r"(\w+(-\w+)+|\w+(\.\w+)+|\w+'\w+|\w+|!+)")
 def normal_desc(desc):
-    rm_stop = stop_patten.sub('', desc.lower())
-    normal_text = " ".join(list(map(lambda x:x[0], word_patten.findall(rm_stop))))
-    return normal_text
+    try:
+        filter_words = []
+        for tuple_words in word_patten.findall(desc):
+            word = tuple_words[0]
+            if word.lower() not in stopwords_list:
+                filter_words.append(word)
+        normal_text = " ".join(filter_words)
+        return normal_text
+    except:
+        return ''
+rm_2_jiage = re.compile(r"\[rm\]")
+no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
 def fill_item_description_null(str_desc, replace):
     if pd.isnull(str_desc):
         return replace
@@ -260,9 +270,9 @@ elapsed = time_measure("tok_raw.texts_to_sequences(name & desc)", start, elapsed
 MAX_NAME_SEQ = 10
 MAX_ITEM_DESC_SEQ = 75
 MAX_CATEGORY_SEQ = 8
-MAX_NAME_DICT_WORDS = max(name_raw_text.word_index.values()) + 2
-MAX_DESC_DICT_WORDS = max(desc_raw_text.word_index.values()) + 2
-del name_raw_text, desc_raw_text
+MAX_NAME_DICT_WORDS = max(name_tok_raw.word_index.values()) + 2
+MAX_DESC_DICT_WORDS = max(desc_tok_raw.word_index.values()) + 2
+del name_tok_raw, desc_tok_raw
 MAX_BRAND = np.max(full_df.brand_name.max()) + 1
 MAX_CONDITION = np.max(full_df.item_condition_id.max()) + 1
 MAX_DESC_LEN = np.max(full_df.desc_len.max()) + 1

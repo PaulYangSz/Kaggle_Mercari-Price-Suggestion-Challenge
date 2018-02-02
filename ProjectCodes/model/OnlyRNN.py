@@ -343,7 +343,7 @@ def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_
     else:
         reg = RandomizedSearchCV(estimator=regress_model,
                                  param_distributions=cv_grid_params.all_params,
-                                 n_iter=120,
+                                 n_iter=24,
                                  n_jobs=N_CORE,
                                  cv=KFold(n_splits=5, shuffle=True, random_state=cv_grid_params.rand_state),
                                  scoring=cv_grid_params.scoring,
@@ -379,10 +379,10 @@ def show_CV_result(search_reg, adjust_paras, classifi_scoring):
         csv_dir = base_dir + '/cv_result'
         if not os.path.exists(csv_dir):
             os.makedirs(csv_dir)
-        return os.path.join(csv_dir, os.path.basename(file_).split('.py')[0] + '.csv')
-    cv_result_df.to_csv('tuning_{}'.format(save_cv_result(__file__)), index=False)
+        return os.path.join(csv_dir, os.path.basename(file_).split('.py')[0] + '_tuning.csv')
     with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
         RECORD_LOG('\n对各组调参参数的交叉训练验证细节为：\n{}'.format(cv_result_df))
+    cv_result_df.to_csv(save_cv_result(__file__), index=False)
     if len(adjust_paras) == 1 and platform.system() == 'Windows':
         every_para_score = pd.Series()
         every_para_score.name = adjust_paras[0]

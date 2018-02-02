@@ -101,7 +101,7 @@ test_df.loc[:, 'item_description'] = test_df['item_description'].map(lambda x: f
 elapsed = time_measure("item_description fill_", start, elapsed)
 
 
-npc_patten = re.compile(r'!')  # '!+'
+npc_patten = re.compile(r'!')  # TODO: '!+'
 # handling categorical variables
 def patten_count(text, patten_):
     try:
@@ -247,7 +247,7 @@ name_raw_text = np.hstack([full_df.name.str.lower()])
 desc_raw_text = np.hstack([full_df.item_description.str.lower()])
 
 print("Fitting tokenizer...")
-name_tok_raw = Tokenizer(num_words=100000, filters='"#$%&()*+,/:;<=>?@[\\]^_`{|}~\t\n')
+name_tok_raw = Tokenizer(num_words=100000, filters='!"#$%&()*+,./:;<=>?@[\\]^_`{|}~\t\n')
 desc_tok_raw = Tokenizer(num_words=300000, filters='\t\n')  # 使用filter然后split。会导致T-Shirt，hi-tech这种词被误操作
 name_tok_raw.fit_on_texts(name_raw_text)
 desc_tok_raw.fit_on_texts(desc_raw_text)

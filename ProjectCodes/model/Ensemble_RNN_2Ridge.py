@@ -98,10 +98,22 @@ def fill_item_description_null(str_desc, replace):
             return replace
 train_df.loc[:, 'item_description'] = train_df['item_description'].map(lambda x: fill_item_description_null(x, ''))
 test_df.loc[:, 'item_description'] = test_df['item_description'].map(lambda x: fill_item_description_null(x, ''))
-elapsed = time_measure("item_description fill_", start, elapsed)
+elapsed = time_measure("item_description fill_(include normalize)", start, elapsed)
 
 
-npc_patten = re.compile(r'!')  # TODO: '!+'
+# 尝试下对name只做normal但是不去停止词
+def normal_name(name):
+    try:
+        normal_text = " ".join(list(map(lambda x: x[0], word_patten.findall(name))))
+        return normal_text
+    except:
+        return ''
+train_df.loc[:, 'name'] = train_df['name'].map(normal_name)
+test_df.loc[:, 'name'] = test_df['name'].map(normal_name)
+elapsed = time_measure("normal_name without stopwords ", start, elapsed)
+
+
+npc_patten = re.compile(r'!+')  # TODO: '!+'
 # handling categorical variables
 def patten_count(text, patten_):
     try:
@@ -247,7 +259,7 @@ name_raw_text = np.hstack([full_df.name.str.lower()])
 desc_raw_text = np.hstack([full_df.item_description.str.lower()])
 
 print("Fitting tokenizer...")
-name_tok_raw = Tokenizer(num_words=100000, filters='!"#$%&()*+,./:;<=>?@[\\]^_`{|}~\t\n')
+name_tok_raw = Tokenizer(num_words=150000, filters='\t\n')
 desc_tok_raw = Tokenizer(num_words=300000, filters='\t\n')  # 使用filter然后split。会导致T-Shirt，hi-tech这种词被误操作
 name_tok_raw.fit_on_texts(name_raw_text)
 desc_tok_raw.fit_on_texts(desc_raw_text)
@@ -270,8 +282,8 @@ elapsed = time_measure("tok_raw.texts_to_sequences(name & desc)", start, elapsed
 MAX_NAME_SEQ = 10
 MAX_ITEM_DESC_SEQ = 75
 MAX_CATEGORY_SEQ = 8
-MAX_NAME_DICT_WORDS = max(name_tok_raw.word_index.values()) + 2
-MAX_DESC_DICT_WORDS = max(desc_tok_raw.word_index.values()) + 2
+MAX_NAME_DICT_WORDS = min(max(name_tok_raw.word_index.values()), name_tok_raw.num_words) + 2
+MAX_DESC_DICT_WORDS = min(max(desc_tok_raw.word_index.values()), desc_tok_raw.num_words) + 2
 del name_tok_raw, desc_tok_raw
 MAX_BRAND = np.max(full_df.brand_name.max()) + 1
 MAX_CONDITION = np.max(full_df.item_condition_id.max()) + 1
@@ -457,6 +469,7 @@ def build_preprocessor(field):
 
 vectorizer = FeatureUnion([
     ('name', CountVectorizer(
+        token_pattern=r"(?u)\S+",
         ngram_range=(1, 2),
         max_features=50000,
         preprocessor=build_preprocessor('name'))),

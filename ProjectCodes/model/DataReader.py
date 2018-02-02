@@ -274,6 +274,18 @@ class DataReader():
             print('【错误】：item_desc_fill_type should be: "fill_" or "fill_paulnull" or "base_name"')
 
 
+        # 尝试下对name只做normal但是不去停止词
+        def normal_name(name):
+            try:
+                normal_text = " ".join(list(map(lambda x: x[0], word_patten.findall(name))))
+                return normal_text
+            except:
+                return ''
+
+        train_df.loc[:, 'name'] = train_df['name'].map(normal_name)
+        test_df.loc[:, 'name'] = test_df['name'].map(normal_name)
+
+
         # 统计下description中特殊字符的个数
         npc_patten = re.compile(r'!')  # '!+'
         def patten_count(text, patten_):
@@ -511,7 +523,7 @@ class DataReader():
         将文本列分词并转编码，构成编码list
         """
         # 分割文本成词，然后将词转成编码(先分词，后编码, 编码从1开始)
-        name_tok_raw = Tokenizer(num_words=100000, filters='!"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n')
+        name_tok_raw = Tokenizer(num_words=150000, filters='\t\n')
         desc_tok_raw = Tokenizer(num_words=300000, filters='\t\n')
         # 这里构成raw文本的时候没有加入test数据是因为就算test中有新出现的词也不会在后续训练中改变词向量
         name_raw_text = np.hstack([self.train_df['name'].str.lower(),
@@ -520,8 +532,8 @@ class DataReader():
                                    self.test_df['item_description'].str.lower()])
         name_tok_raw.fit_on_texts(name_raw_text)
         desc_tok_raw.fit_on_texts(desc_raw_text)
-        self.n_name_dict_words = max(name_tok_raw.word_index.values()) + 2
-        self.n_desc_dict_words = max(desc_tok_raw.word_index.values()) + 2
+        self.n_name_dict_words = min(max(name_tok_raw.word_index.values()), name_tok_raw.num_words) + 2
+        self.n_desc_dict_words = min(max(desc_tok_raw.word_index.values()), desc_tok_raw.num_words) + 2
 
         # self.train_df["cat_int_seq"] = tok_raw.texts_to_sequences(self.train_df.category_name.str.lower())
         # self.test_df["cat_int_seq"] = tok_raw.texts_to_sequences(self.test_df.category_name.str.lower())
@@ -625,6 +637,7 @@ class DataReader():
 
         feat_union = FeatureUnion([
             ('name', CountVectorizer(
+                token_pattern=r"(?u)\S+",
                 ngram_range=(1, 2),
                 max_features=50000,
                 preprocessor=build_preprocessor('name'))),

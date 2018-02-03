@@ -522,6 +522,7 @@ print(X.shape, X_train.shape, X_dev.shape, X_test.shape)
 
 print("Fitting Ridge model on training examples...")
 ridge_model = Ridge(solver='auto', fit_intercept=True, alpha=1.0,max_iter=100, normalize=False, tol=0.05, random_state = 1)
+# ridge_modelCV = Ridge(solver='auto', fit_intercept=True, alpha=5.0,max_iter=None, normalize=False, tol=0.05, random_state = 1)
 ridge_modelCV = RidgeCV(fit_intercept=True, alphas=[5.0], normalize=False, cv = 2, scoring='neg_mean_squared_error')
 ridge_model.fit(X_train, Y_train)
 ridge_modelCV.fit(X_train, Y_train)

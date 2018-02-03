@@ -136,7 +136,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.drop_out_layers = drop_out_layers
         self.dense_layers_dim = dense_layers_dim
         self.emb_GRU_model = self.get_CNN_model(data_reader)
-        self.emb_GRU_model.summary(print_fn=RECORD_LOG)
+        # self.emb_GRU_model.summary(print_fn=RECORD_LOG)
         self.epochs = epochs
         self.batch_size = batch_size
         self.lr_init = lr_init
@@ -515,6 +515,7 @@ if __name__ == "__main__":
         print('==========Need GridCV')
         # 4. Use GridSearchCV to tuning model.
         regress_model = SelfLocalRegressor(data_reader=data_reader)
+        regress_model.emb_GRU_model.summary(print_fn=RECORD_LOG)
         print('Begin to train self-defined sklearn-API regressor.')
         cv_reg, regress_model = train_model_with_gridsearch(regress_model, sample_df, cv_grid_params)
         RECORD_LOG('[{:.4f}s] Finished Grid Search and training.'.format(time.time() - start_time))
@@ -544,6 +545,7 @@ if __name__ == "__main__":
         assert len(adjust_para_list) == 0
         cv_grid_params.rm_list_dict_params()
         regress_model = SelfLocalRegressor(data_reader=data_reader, **cv_grid_params.all_params)
+        regress_model.emb_GRU_model.summary(print_fn=RECORD_LOG)
 
         train_X = sample_df.drop('target', axis=1)
         train_y = sample_df['target'].values

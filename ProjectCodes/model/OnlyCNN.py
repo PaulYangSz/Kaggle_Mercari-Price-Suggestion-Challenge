@@ -193,7 +193,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
                 conv = MaxPooling1D(pool_size=pool_size_list[i])(conv)
                 conv = Flatten()(conv)
                 conv_blocks.append(conv)
-                return Concatenate()(conv_blocks) if len(conv_blocks) > 1 else conv_blocks[0]
+            return Concatenate()(conv_blocks) if len(conv_blocks) > 1 else conv_blocks[0]
         cnn_layer_name = cnn_layer_output(self.name_filter_size_list, self.name_num_filters_list, self.name_strides_list, self.name_pool_size_list, emb_name)
         cnn_layer_item_desc = cnn_layer_output(self.desc_filter_size_list, self.desc_num_filters_list, self.desc_strides_list, self.desc_pool_size_list, emb_item_desc)
         # rnn_layer_cat_name = GRU(units=self.GRU_layers_out_dim[2])(emb_category_name)

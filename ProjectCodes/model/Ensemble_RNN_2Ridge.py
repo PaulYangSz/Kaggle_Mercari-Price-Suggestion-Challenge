@@ -72,7 +72,7 @@ print('After drop pricee < 3.0{}'.format(train_df.shape))
 # stop_patten = re.compile(r'\b(' + r'|'.join(stopwords.words('english')) + r')\b\s*')  # 会把Burt's Bees匹配到
 # del stop_patten
 stopwords_list = stopwords.words('english')
-word_patten = re.compile(r"(\w+(-\w+)+|\w+(\.\w+)+|\w+'\w+|\w+|!+|\?+)")
+word_patten = re.compile(r"(\w+(-\w+)+|\w+(\.\w+)+|\w+'\w+|\w+|!+)")
 def normal_desc(desc):
     try:
         filter_words = []
@@ -114,7 +114,6 @@ elapsed = time_measure("normal_name without stopwords ", start, elapsed)
 
 
 npc_patten = re.compile(r'!')
-que_patten = re.compile(r'\?')
 # handling categorical variables
 def patten_count(text, patten_):
     try:
@@ -124,9 +123,7 @@ def patten_count(text, patten_):
         return 0
 train_df['desc_npc_cnt'] = train_df['item_description'].apply(lambda x: patten_count(x, npc_patten))
 test_df['desc_npc_cnt'] = test_df['item_description'].apply(lambda x: patten_count(x, npc_patten))
-train_df['desc_que_cnt'] = train_df['item_description'].apply(lambda x: patten_count(x, que_patten))
-test_df['desc_que_cnt'] = test_df['item_description'].apply(lambda x: patten_count(x, que_patten))
-elapsed = time_measure("Statistic NPC|QUE count", start, elapsed)
+elapsed = time_measure("Statistic NPC count", start, elapsed)
 
 #splitting category_name into subcategories
 train_df.category_name.fillna(value="missing/missing/missing", inplace=True)
@@ -293,7 +290,6 @@ MAX_CONDITION = np.max(full_df.item_condition_id.max()) + 1
 MAX_DESC_LEN = np.max(full_df.desc_len.max()) + 1
 MAX_NAME_LEN = np.max(full_df.name_len.max()) + 1
 MAX_NPC_LEN = np.max(full_df.desc_npc_cnt.max()) + 1
-MAX_QUE_LEN = np.max(full_df.desc_que_cnt.max()) + 1
 MAX_SUBCAT_0 = np.max(full_df.subcat_0.max()) + 1
 MAX_SUBCAT_1 = np.max(full_df.subcat_1.max()) + 1
 MAX_SUBCAT_2 = np.max(full_df.subcat_2.max()) + 1
@@ -310,7 +306,6 @@ def get_rnn_data(dataset):
         'desc_len': np.array(dataset[["desc_len"]]),
         'name_len': np.array(dataset[["name_len"]]),
         'desc_npc_cnt': np.array(dataset[["desc_npc_cnt"]]),
-        'desc_que_cnt': np.array(dataset[["desc_que_cnt"]]),
         'subcat_0': np.array(dataset.subcat_0),
         'subcat_1': np.array(dataset.subcat_1),
         'subcat_2': np.array(dataset.subcat_2),
@@ -352,7 +347,6 @@ def new_rnn_model(lr=0.001, decay=0.0):
     desc_len = Input(shape=[1], name="desc_len")
     name_len = Input(shape=[1], name="name_len")
     desc_npc_cnt = Input(shape=[1], name="desc_npc_cnt")
-    desc_que_cnt = Input(shape=[1], name="desc_que_cnt")
     subcat_0 = Input(shape=[1], name="subcat_0")
     subcat_1 = Input(shape=[1], name="subcat_1")
     subcat_2 = Input(shape=[1], name="subcat_2")
@@ -365,7 +359,6 @@ def new_rnn_model(lr=0.001, decay=0.0):
     emb_desc_len = Embedding(MAX_DESC_LEN, 5)(desc_len)
     emb_name_len = Embedding(MAX_NAME_LEN, 5)(name_len)
     emb_desc_npc_cnt = Embedding(MAX_NPC_LEN, 5)(desc_npc_cnt)
-    emb_desc_que_cnt = Embedding(MAX_QUE_LEN, 5)(desc_que_cnt)
     emb_subcat_0 = Embedding(MAX_SUBCAT_0, 10)(subcat_0)
     emb_subcat_1 = Embedding(MAX_SUBCAT_1, 10)(subcat_1)
     emb_subcat_2 = Embedding(MAX_SUBCAT_2, 10)(subcat_2)
@@ -381,7 +374,6 @@ def new_rnn_model(lr=0.001, decay=0.0):
         Flatten()(emb_desc_len),
         Flatten()(emb_name_len),
         Flatten()(emb_desc_npc_cnt),
-        Flatten()(emb_desc_que_cnt),
         Flatten()(emb_subcat_0),
         Flatten()(emb_subcat_1),
         Flatten()(emb_subcat_2),
@@ -400,7 +392,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     output = Dense(1, activation="linear")(main_l)
 
     model = Model([name, item_desc, brand_name, item_condition,
-                   num_vars, desc_len, name_len, desc_npc_cnt, desc_que_cnt, subcat_0, subcat_1, subcat_2], output)
+                   num_vars, desc_len, name_len, desc_npc_cnt, subcat_0, subcat_1, subcat_2], output)
 
     optimizer = Adam(lr=lr, decay=decay)
 
@@ -466,7 +458,6 @@ full_df['item_condition_id'] = full_df['item_condition_id'].astype(str)
 full_df['desc_len'] = full_df['desc_len'].astype(str)
 full_df['name_len'] = full_df['name_len'].astype(str)
 full_df['desc_npc_cnt'] = full_df['desc_npc_cnt'].astype(str)
-full_df['desc_que_cnt'] = full_df['desc_que_cnt'].astype(str)
 # full_df['item_description'] = full_df['item_description'].fillna('No description yet').astype(str)
 
 
@@ -509,9 +500,6 @@ vectorizer = FeatureUnion([
     ('desc_npc_cnt', CountVectorizer(
         token_pattern='\d+',
         preprocessor=build_preprocessor('desc_npc_cnt'))),
-    ('desc_que_cnt', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('desc_que_cnt'))),
     ('item_description', TfidfVectorizer(
         token_pattern=r"(?u)\S+",
         ngram_range=(1, 2),

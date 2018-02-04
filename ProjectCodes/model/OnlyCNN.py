@@ -309,9 +309,10 @@ class CvGridParams(object):
     def __init__(self, param_type:str='default'):
         if param_type == 'default':
             self.name = param_type
+            # todo: 还需要调网络结构以及进一步的学习率选择
             self.all_params = {
                 'name_emb_dim': [15],  # In name each word's vector length
-                'item_desc_emb_dim': [70],
+                'item_desc_emb_dim': [50],
                 # 'cat_name_emb_dim': [20],
                 'brand_emb_dim': [10],
                 'cat_main_emb_dim': [10],
@@ -320,21 +321,21 @@ class CvGridParams(object):
                 'item_cond_id_emb_dim': [5],
                 'desc_len_dim': [5],
                 'name_len_dim': [5],
-                'bn_flag': [False],  # Batch-Norm switch
-                'name_filter_size_list': [(2, 4)],  # CNN parameters
-                'name_num_filters_list': [(7, 7)],
-                'name_strides_list': [(1, 1)],
-                'name_pool_size_list': [(2, 2)],
-                'desc_filter_size_list': [(2, 4)],
-                'desc_num_filters_list': [(10, 10)],
-                'desc_strides_list': [(1, 1)],
-                'desc_pool_size_list': [(2, 2)],
+                'bn_flag': [True],  # Batch-Norm switch
+                'name_filter_size_list': [(3, 4)],  #[(2, 4), (2, 3), (3, 4)],  # CNN parameters
+                'name_num_filters_list': [(7, 7)],  #[(7, 7), (10, 10)],
+                'name_strides_list': [(2, 2)],  #[(1, 1), (2, 2)],
+                'name_pool_size_list': [(3, 3)],  #[(2, 2), (3, 3)],
+                'desc_filter_size_list': [(2, 3)],  #[(2, 4), (2, 3), (2, 6), (4, 6)],
+                'desc_num_filters_list': [(10, 10)],  #[(10, 10), (15, 15)],
+                'desc_strides_list': [(1, 1)],  #[(1, 1), (2, 2), (3, 3)],
+                'desc_pool_size_list': [(3, 3)],  #[(2, 2), (3, 3), (6, 6)],
                 'drop_out_layers': [(0.1, 0.1, 0.1, 0.1)],  # DNN parameters
                 'dense_layers_dim': [(512, 256, 128, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*3],
-                'lr_init': np.geomspace(0.007, 0.1, 100),  # [0.007],
-                'lr_final': np.geomspace(0.0001, 0.006, 20),  # [0.000236781]
+                'lr_init': np.geomspace(0.006, 0.008, 100),  # [0.00705042933244],
+                'lr_final': np.geomspace(0.0002, 0.001, 100),  # [0.000317165257928]
             }
         else:
             print("Construct CvGridParams with error param_type: " + param_type)
@@ -356,6 +357,7 @@ def print_param(cv_grid_params:CvGridParams):
         if len(v) > 1:
             search_param_list.append(k)
     RECORD_LOG("}")
+    search_param_list.sort()
     return search_param_list
 
 

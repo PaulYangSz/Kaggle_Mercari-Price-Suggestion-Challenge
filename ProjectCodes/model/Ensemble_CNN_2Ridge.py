@@ -1,5 +1,5 @@
 #changes:
-#optimizing RNN and Ridge again
+#optimizing CNN and Ridge again
 #based on https://www.kaggle.com/valkling/mercari-rnn-2ridge-models-with-notes-0-42755
 #required libraries
 import gc
@@ -18,7 +18,8 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
-from keras.layers import Input, Dropout, Dense, concatenate, GRU, Embedding, Flatten, Activation, BatchNormalization
+from keras.layers import Input, Dropout, Dense, concatenate, GRU, Embedding, Flatten, Activation, BatchNormalization, \
+    Conv1D, MaxPooling1D, Concatenate
 from keras.optimizers import Adam
 from keras.models import Model
 from keras import backend as K
@@ -31,7 +32,7 @@ import math
 np.random.seed(123)
 BN_FLAG = True
 USE_NAME_BRAND_MAP = True
-RNN_VERBOSE = 10
+CNN_VERBOSE = 10
 SPEED_UP = False
 if SPEED_UP:
     import pyximport
@@ -277,7 +278,7 @@ test_df['name_len'] = full_df[n_trains+n_devs:]['name_len']
 elapsed = time_measure("tok_raw.texts_to_sequences(name & desc)", start, elapsed)
 
 
-#constants to use in RNN model
+#constants to use in CNN model
 MAX_NAME_SEQ = 10
 MAX_ITEM_DESC_SEQ = 75
 MAX_CATEGORY_SEQ = 8
@@ -294,8 +295,8 @@ MAX_SUBCAT_1 = np.max(full_df.subcat_1.max()) + 1
 MAX_SUBCAT_2 = np.max(full_df.subcat_2.max()) + 1
 
 
-#transform the data for RNN model
-def get_rnn_data(dataset):
+#transform the data for CNN model
+def get_cnn_data(dataset):
     X = {
         'name': pad_sequences(dataset.seq_name, maxlen=MAX_NAME_SEQ),
         'item_desc': pad_sequences(dataset.seq_item_description, maxlen=MAX_ITEM_DESC_SEQ),
@@ -315,13 +316,13 @@ train = full_df[:n_trains]
 dev = full_df[n_trains:n_trains+n_devs]
 test = full_df[n_trains+n_devs:]
 
-X_train = get_rnn_data(train)
+X_train = get_cnn_data(train)
 Y_train = train.target.values.reshape(-1, 1)
 
-X_dev = get_rnn_data(dev)
+X_dev = get_cnn_data(dev)
 Y_dev = dev.target.values.reshape(-1, 1)
 
-X_test = get_rnn_data(test)
+X_test = get_cnn_data(test)
 
 
 #our own loss function
@@ -337,7 +338,7 @@ def root_mean_squared_error(y_true, y_pred):
 np.random.seed(123)
 
 
-def new_rnn_model(lr=0.001, decay=0.0):
+def new_cnn_model(lr=0.001, decay=0.0):
     name = Input(shape=[X_train["name"].shape[1]], name="name")
     item_desc = Input(shape=[X_train["item_desc"].shape[1]], name="item_desc")
     brand_name = Input(shape=[1], name="brand_name")
@@ -362,9 +363,28 @@ def new_rnn_model(lr=0.001, decay=0.0):
     emb_subcat_1 = Embedding(MAX_SUBCAT_1, 10)(subcat_1)
     emb_subcat_2 = Embedding(MAX_SUBCAT_2, 10)(subcat_2)
 
-    # rnn layers (GRUs are faster than LSTMs and speed is important here)
-    rnn_layer1 = GRU(16)(emb_item_desc)
-    rnn_layer2 = GRU(8)(emb_name)
+    # CNN: Use Conv1D and MaxPooling1D(or GlobalMaxPooling1D)
+    def cnn_layer_output(filter_size_list, num_filters_list, strides_list, pool_size_list, emb_words):
+        conv_blocks = []
+        assert len(filter_size_list) == len(num_filters_list) and len(num_filters_list) == len(strides_list) and len(strides_list) == len(pool_size_list)
+        for i in range(len(filter_size_list)):
+            # [Input] (samples_n, time_n, dim) -> [Output] (samples_n, new_time_n, filter_n)
+            conv = Conv1D(filters=num_filters_list[i],
+                          kernel_size=filter_size_list[i],
+                          padding="valid",
+                          strides=strides_list[i])(emb_words)
+            if BN_FLAG:
+                conv = BatchNormalization()(conv)
+            conv = Activation(activation="relu")(conv)
+            # [Input] (samples_n, time_n, feat_n) -> [Output] (samples_n, down_time_n, feat_n)
+            conv = MaxPooling1D(pool_size=pool_size_list[i])(conv)
+            conv = Flatten()(conv)
+            conv_blocks.append(conv)
+        return Concatenate()(conv_blocks) if len(conv_blocks) > 1 else conv_blocks[0]
+    cnn_layer_name = cnn_layer_output(filter_size_list=[3, 4], num_filters_list=[7, 7], strides_list=[2, 2],
+                                      pool_size_list=[3, 3], emb_words=emb_name)
+    cnn_layer_item_desc = cnn_layer_output(filter_size_list=[2, 3], num_filters_list=[10, 10], strides_list=[1, 1],
+                                           pool_size_list=[3, 3], emb_words=emb_item_desc)
 
     # main layers
     main_layer = concatenate([
@@ -376,8 +396,8 @@ def new_rnn_model(lr=0.001, decay=0.0):
         Flatten()(emb_subcat_0),
         Flatten()(emb_subcat_1),
         Flatten()(emb_subcat_2),
-        rnn_layer1,
-        rnn_layer2,
+        cnn_layer_name,
+        cnn_layer_item_desc,
         num_vars,
     ])
 
@@ -390,7 +410,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
             main_layer = BatchNormalization()(main_layer)
         main_layer = Activation(activation='relu')(main_layer)
         main_layer = Dropout(drop_out_layers[i])(main_layer)
-    # (increasing the nodes or adding layers does not effect the time quite as much as the rnn layers)
+    # (increasing the nodes or adding layers does not effect the time quite as much as the cnn layers)
 
     # the output layer.
     output = Dense(1, activation="linear")(main_layer)
@@ -406,12 +426,12 @@ def new_rnn_model(lr=0.001, decay=0.0):
     return model
 
 
-model = new_rnn_model()
+model = new_cnn_model()
 model.summary()
 del model
 
 
-#Fit RNN model to train data
+#Fit CNN model to train data
 
 # Set hyper parameters for the model
 BATCH_SIZE = 512 * 3
@@ -420,13 +440,13 @@ epochs = 2
 # Calculate learning rate decay
 exp_decay = lambda init, fin, steps: (init/fin)**(1/(steps-1)) - 1
 steps = int(len(X_train['name']) / BATCH_SIZE) * epochs
-lr_init, lr_fin = 0.01485, 0.00056
+lr_init, lr_fin = 0.00822417036446, 0.0001
 lr_decay = exp_decay(lr_init, lr_fin, steps)
 
 # Create model and fit it with training dataset.
-rnn_model = new_rnn_model(lr=lr_init, decay=lr_decay)
-rnn_model.fit(X_train, Y_train, epochs=epochs, batch_size=BATCH_SIZE,validation_data=(X_dev, Y_dev), verbose=RNN_VERBOSE)
-elapsed = time_measure("rnn_model.fit()", start, elapsed)
+cnn_model = new_cnn_model(lr=lr_init, decay=lr_decay)
+cnn_model.fit(X_train, Y_train, epochs=epochs, batch_size=BATCH_SIZE,validation_data=(X_dev, Y_dev), verbose=CNN_VERBOSE)
+elapsed = time_measure("cnn_model.fit()", start, elapsed)
 
 
 #Define RMSL Error Function for checking prediction
@@ -436,14 +456,14 @@ def rmsle(Y, Y_pred):
 
 
 print("Evaluating the model on validation data...")
-Y_dev_preds_rnn = rnn_model.predict(X_dev, batch_size=BATCH_SIZE)
-print(" RMSLE error:", rmsle(Y_dev, Y_dev_preds_rnn))
+Y_dev_preds_cnn = cnn_model.predict(X_dev, batch_size=BATCH_SIZE)
+print(" RMSLE error:", rmsle(Y_dev, Y_dev_preds_cnn))
 
 
 #prediction for test data
-rnn_preds = rnn_model.predict(X_test, batch_size=BATCH_SIZE, verbose=RNN_VERBOSE)
-rnn_preds = np.expm1(rnn_preds)
-elapsed = time_measure("rnn_model.predict()", start, elapsed)
+cnn_preds = cnn_model.predict(X_test, batch_size=BATCH_SIZE, verbose=CNN_VERBOSE)
+cnn_preds = np.expm1(cnn_preds)
+elapsed = time_measure("cnn_model.predict()", start, elapsed)
 
 
 #Ridge modelling
@@ -565,23 +585,23 @@ for i in range(100):
         r = i*0.01
         r2 = j*0.01
         if r+r2 < 1.0:
-            Y_dev_preds = aggregate_predicts3(Y_dev_preds_rnn, Y_dev_preds_ridgeCV, Y_dev_preds_ridge, r, r2)
+            Y_dev_preds = aggregate_predicts3(Y_dev_preds_cnn, Y_dev_preds_ridgeCV, Y_dev_preds_ridge, r, r2)
             fpred = rmsle(Y_dev, Y_dev_preds)
             if fpred < lowest:
                 best1 = r
                 best2 = r2
                 lowest = fpred
-Y_dev_preds = aggregate_predicts3(Y_dev_preds_rnn, Y_dev_preds_ridgeCV, Y_dev_preds_ridge, best1, best2)
+Y_dev_preds = aggregate_predicts3(Y_dev_preds_cnn, Y_dev_preds_ridgeCV, Y_dev_preds_ridge, best1, best2)
 elapsed = time_measure("aggregate_predicts3() get best coefficients", start, elapsed)
 
 dev_best_rmsle = rmsle(Y_dev, Y_dev_preds)
-print("(Best) RMSL error for RNN + Ridge + RidgeCV on dev set:", dev_best_rmsle)
+print("(Best) RMSL error for CNN + Ridge + RidgeCV on dev set:", dev_best_rmsle)
 
 
 # best predicted submission
-preds = aggregate_predicts3(rnn_preds, ridgeCV_preds, ridge_preds, best1, best2)
+preds = aggregate_predicts3(cnn_preds, ridgeCV_preds, ridge_preds, best1, best2)
 submission = pd.DataFrame({"test_id": test_df.test_id, "price": preds.reshape(-1)}, columns=['test_id', 'price'])
-# submission.to_csv("./rnn_ridge_submission.csv", index=False)
+# submission.to_csv("./cnn_ridge_submission.csv", index=False)
 submission.to_csv("./best1_{}_best2_{}_DevBestRmsle_{:.5f}_.csv".format(best1,best2,dev_best_rmsle), index=False)
 print("completed time:")
 stop_real = datetime.now()

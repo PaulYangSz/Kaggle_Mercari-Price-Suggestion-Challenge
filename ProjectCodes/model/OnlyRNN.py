@@ -324,6 +324,7 @@ def print_param(cv_grid_params:CvGridParams):
         if len(v) > 1:
             search_param_list.append(k)
     RECORD_LOG("}")
+    search_param_list.sort()
     return search_param_list
 
 

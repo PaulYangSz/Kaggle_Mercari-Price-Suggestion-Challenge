@@ -219,7 +219,6 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
                                    Flatten()(emb_desc_npc_cnt),
                                    rnn_layer_name,
                                    rnn_layer_item_desc,
-                                   # rnn_layer_cat_name,
                                    num_vars],
                                    name='concat_layer')
         main_layer = concat_layer
@@ -365,18 +364,18 @@ class CvGridParams(object):
                 'lr_init': [0.01485],  # np.geomspace(0.009, 0.02, 100),
                 'lr_final': [0.00056],  # np.geomspace(0.0001, 0.001, 100),
 
-                'lgb_num_leaves': [110],
-                'lgb_max_depth': [4],
-                'lgb_learning_rate': [0.5],
-                'lgb_n_estimators': [3000],
-                'lgb_min_split_gain': [0.0],
-                'lgb_min_child_weight': [1e-3],
-                'lgb_min_child_samples': [20],
-                'lgb_subsample': [0.8],
-                'lgb_subsample_freq': [1],
-                'lgb_colsample_bytree': [0.8],
-                'lgb_reg_alpha': [0.0],
-                'lgb_reg_lambda': [0.0],
+                'lgb_num_leaves': [110, 200, 50],
+                'lgb_max_depth': [4, 6, 8],
+                'lgb_learning_rate': [0.5, 0.25, 0.75],
+                'lgb_n_estimators': [3000, 1000, 500],
+                'lgb_min_split_gain': [0.0, 1.0],
+                'lgb_min_child_weight': [1e-3, 0.01],
+                'lgb_min_child_samples': [20, 200],
+                'lgb_subsample': [0.8, 0.6],
+                'lgb_subsample_freq': [1, 10],
+                'lgb_colsample_bytree': [0.8, 0.6],
+                'lgb_reg_alpha': [0.0, 0.5, 1.0],
+                'lgb_reg_lambda': [0.0, 0.5, 1.0],
                 'lgb_rand_state': [self.rand_state],
             }
         else:
@@ -423,9 +422,9 @@ def train_model_with_gridsearch(regress_model:EmbLgbRegressor, sample_df, cv_gri
     else:
         reg = RandomizedSearchCV(estimator=regress_model,
                                  param_distributions=cv_grid_params.all_params,
-                                 n_iter=24,
+                                 n_iter=3,
                                  n_jobs=N_CORE,
-                                 cv=KFold(n_splits=5, shuffle=True, random_state=cv_grid_params.rand_state),
+                                 cv=KFold(n_splits=4, shuffle=True, random_state=cv_grid_params.rand_state),
                                  scoring=cv_grid_params.scoring,
                                  verbose=2,
                                  refit=False)

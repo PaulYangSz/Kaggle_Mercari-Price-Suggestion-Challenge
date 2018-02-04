@@ -301,7 +301,7 @@ class CvGridParams(object):
                 'dense_layers_unit': [(512, 256, 128, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*3],
-                'lr_init': [0.01485],  # np.geomspace(0.009, 0.02, 100),  
+                'lr_init': [0.01485],  # np.geomspace(0.009, 0.02, 100),
                 'lr_final': [0.00056],  # np.geomspace(0.0001, 0.001, 100),
             }
         else:

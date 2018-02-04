@@ -18,7 +18,7 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
-from keras.layers import Input, Dropout, Dense, concatenate, GRU, Embedding, Flatten, Activation
+from keras.layers import Input, Dropout, Dense, concatenate, GRU, Embedding, Flatten, Activation, BatchNormalization
 from keras.optimizers import Adam
 from keras.models import Model
 from keras import backend as K
@@ -29,7 +29,7 @@ import math
 
 # set seed
 np.random.seed(123)
-
+BN_FLAG = True
 USE_NAME_BRAND_MAP = True
 RNN_VERBOSE = 10
 EXPM1_before_MUL_Best12_Flag = True
@@ -368,7 +368,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     rnn_layer2 = GRU(8)(emb_name)
 
     # main layers
-    main_l = concatenate([
+    main_layer = concatenate([
         Flatten()(emb_brand_name),
         Flatten()(emb_item_condition),
         Flatten()(emb_desc_len),
@@ -382,14 +382,19 @@ def new_rnn_model(lr=0.001, decay=0.0):
         num_vars,
     ])
 
-    # (incressing the nodes or adding layers does not effect the time quite as much as the rnn layers)
-    main_l = Dropout(0.1)(Dense(512, kernel_initializer='normal', activation='relu')(main_l))
-    main_l = Dropout(0.1)(Dense(256, kernel_initializer='normal', activation='relu')(main_l))
-    main_l = Dropout(0.1)(Dense(128, kernel_initializer='normal', activation='relu')(main_l))
-    main_l = Dropout(0.1)(Dense(64, kernel_initializer='normal', activation='relu')(main_l))
+    # Concat[all] -> Dense1 -> ... -> DenseN
+    dense_layers_unit = [512, 256, 128, 64]
+    drop_out_layers = [0.1, 0.1, 0.1, 0.1]
+    for i in range(len(dense_layers_unit)):
+        main_layer = Dense(dense_layers_unit[i])(main_layer)
+        if BN_FLAG:
+            main_layer = BatchNormalization()(main_layer)
+        main_layer = Activation(activation='relu')(main_layer)
+        main_layer = Dropout(drop_out_layers[i])(main_layer)
+    # (increasing the nodes or adding layers does not effect the time quite as much as the rnn layers)
 
     # the output layer.
-    output = Dense(1, activation="linear")(main_l)
+    output = Dense(1, activation="linear")(main_layer)
 
     model = Model([name, item_desc, brand_name, item_condition,
                    num_vars, desc_len, name_len, desc_npc_cnt, subcat_0, subcat_1, subcat_2], output)
@@ -416,7 +421,7 @@ epochs = 2
 # Calculate learning rate decay
 exp_decay = lambda init, fin, steps: (init/fin)**(1/(steps-1)) - 1
 steps = int(len(X_train['name']) / BATCH_SIZE) * epochs
-lr_init, lr_fin = 0.005, 0.001
+lr_init, lr_fin = 0.01485, 0.00056
 lr_decay = exp_decay(lr_init, lr_fin, steps)
 
 # Create model and fit it with training dataset.

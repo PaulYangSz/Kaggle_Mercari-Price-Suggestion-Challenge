@@ -1,3 +1,4 @@
 input/
 *.pyc
 ProjectCodes/model/csv_output/
+ProjectCodes/model/cv_result/

@@ -108,7 +108,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
 
     def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, cat_name_emb_dim=20, brand_emb_dim=10,
                  cat_main_emb_dim=10, cat_sub_emb_dim=10, cat_sub2_emb_dim=10, item_cond_id_emb_dim=5, desc_len_dim=5, name_len_dim=5,
-                 GRU_layers_out_dim=(8, 16), bn_flag=False, drop_out_layers=(0.25, 0.1), dense_layers_dim=(128, 64),
+                 GRU_layers_out_dim=(8, 16), bn_flag=False, drop_out_layers=(0.25, 0.1), dense_layers_unit=(128, 64),
                  epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007):
         self.data_reader = data_reader
         self.name_emb_dim = name_emb_dim
@@ -124,9 +124,9 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.npc_cnt_dim = desc_len_dim  # TODO: 需要设置下npc的维度
         self.GRU_layers_out_dim = GRU_layers_out_dim
         self.bn_flag = bn_flag
-        assert len(drop_out_layers) == len(dense_layers_dim)
+        assert len(drop_out_layers) == len(dense_layers_unit)
         self.drop_out_layers = drop_out_layers
-        self.dense_layers_dim = dense_layers_dim
+        self.dense_layers_unit = dense_layers_unit
         self.emb_GRU_model = self.get_GRU_model(data_reader)
         # self.emb_GRU_model.summary(print_fn=RECORD_LOG)
         self.epochs = epochs
@@ -188,8 +188,8 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
                                   # rnn_layer_cat_name,
                                   num_vars])
         # Concat[all] -> Dense1 -> ... -> DenseN
-        for i in range(len(self.dense_layers_dim)):
-            main_layer = Dense(self.dense_layers_dim[i])(main_layer)
+        for i in range(len(self.dense_layers_unit)):
+            main_layer = Dense(self.dense_layers_unit[i])(main_layer)
             if self.bn_flag:
                 main_layer = BatchNormalization()(main_layer)
             main_layer = Activation(activation='relu')(main_layer)
@@ -296,13 +296,13 @@ class CvGridParams(object):
                 'desc_len_dim': [5],
                 'name_len_dim': [5],
                 'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
-                'bn_flage': [True],  # Batch-Norm switch
+                'bn_flag': [True],  # Batch-Norm switch
                 'drop_out_layers': [(0.1, 0.1, 0.1, 0.1)],  # DNN parameters
-                'dense_layers_dim': [(512, 256, 128, 64)],
+                'dense_layers_unit': [(512, 256, 128, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*3],
-                'lr_init': np.geomspace(0.007, 0.1, 100),  # [0.007],
-                'lr_final': np.geomspace(0.0001, 0.006, 20),  # [0.000236781]
+                'lr_init': np.geomspace(0.01, 0.1, 100),  # [0.01485],
+                'lr_final': np.geomspace(0.0001, 0.006, 20),  # [0.00056]
             }
         else:
             print("Construct CvGridParams with error param_type: " + param_type)

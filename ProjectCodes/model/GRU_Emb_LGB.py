@@ -7,6 +7,8 @@ Use sklearn based API model to local run and tuning.
 import platform
 import os
 import sys
+from pprint import pprint
+
 import pandas as pd
 import numpy as np
 import time
@@ -16,10 +18,7 @@ from sklearn.linear_model import Ridge
 from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, median_absolute_error
 from sklearn.metrics import r2_score
-from sklearn.model_selection import GridSearchCV
-from sklearn.model_selection import StratifiedKFold
-from sklearn.model_selection import train_test_split
-from sklearn.utils.estimator_checks import check_estimator
+from sklearn.model_selection import GridSearchCV, KFold, RandomizedSearchCV
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from keras.layers import Input, Dropout, Dense, BatchNormalization, \
     Activation, concatenate, GRU, Embedding, Flatten
@@ -32,7 +31,7 @@ import logging.config
 import lightgbm as lgb
 
 np.random.seed(123)
-
+USE_GRID_SEARCH = False
 if platform.system() == 'Windows':
     N_CORE = 1
     LOCAL_FLAG = True
@@ -44,6 +43,7 @@ elif 's30' in platform.node():
     N_CORE = 1
     LOCAL_FLAG = True
 else:
+    N_CORE = 1
     LOCAL_FLAG = False
 
 if LOCAL_FLAG:
@@ -71,10 +71,27 @@ if LOCAL_FLAG:
     if 'Logger' not in dir():
         Logger = start_logging()
 
-input_LGB_all_concat = False
+input_LGB_all_concat = True
 
 
 RECORD_LOG = lambda log_str: record_log(LOCAL_FLAG, log_str)
+
+SPEED_UP = False
+if SPEED_UP:
+    import pyximport
+    pyximport.install()
+    import os
+    import random
+    import tensorflow as tf
+    # os.environ['PYTHONHASHSEED'] = '10000'
+    np.random.seed(123)
+    # random.seed(10002)
+    session_conf = tf.ConfigProto(intra_op_parallelism_threads=5, inter_op_parallelism_threads=1)
+    from keras import backend
+    # tf.set_random_seed(10003)
+    backend.set_session(tf.Session(graph=tf.get_default_graph(), config=session_conf))
+else:
+    np.random.seed(123)
 
 
 class EmbLgbRegressor(BaseEstimator, RegressorMixin):
@@ -94,8 +111,8 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
 
     def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, cat_name_emb_dim=20, brand_emb_dim=10,
                  cat_main_emb_dim=10, cat_sub_emb_dim=10, cat_sub2_emb_dim=10, item_cond_id_emb_dim=5, desc_len_dim=5, name_len_dim=5,
-                 GRU_layers_out_dim=(8, 16), drop_out_layers=(0.25, 0.1), dense_layers_dim=(128, 64),
-                 epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007,
+                 GRU_layers_out_dim=(8, 16), bn_flag=True, drop_out_layers=(0.25, 0.1), dense_layers_unit=(128, 64),
+                 epochs=3, batch_size=512 * 3, lr_init=0.015, lr_final=0.007,
                  lgb_num_leaves=100, lgb_max_depth=4, lgb_learning_rate=0.1, lgb_n_estimators=3000, lgb_min_split_gain=0.0,
                  lgb_min_child_weight=1e-3, lgb_min_child_samples=20, lgb_subsample=0.8, lgb_subsample_freq=1, lgb_colsample_bytree=0.8,
                  lgb_reg_alpha=0.0, lgb_reg_lambda=0.0, lgb_rand_state=20180122
@@ -111,11 +128,14 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         self.item_cond_id_emb_dim = item_cond_id_emb_dim
         self.desc_len_dim = desc_len_dim
         self.name_len_dim = name_len_dim
+        self.npc_cnt_dim = desc_len_dim  # TODO: 需要设置下npc的维度
         self.GRU_layers_out_dim = GRU_layers_out_dim
-        assert len(drop_out_layers) == len(dense_layers_dim)
+        self.bn_flag = bn_flag
+        assert len(drop_out_layers) == len(dense_layers_unit)
         self.drop_out_layers = drop_out_layers
-        self.dense_layers_dim = dense_layers_dim
+        self.dense_layers_unit = dense_layers_unit
         self.emb_GRU_model = self.get_GRU_model(data_reader)
+        # self.emb_GRU_model.summary(print_fn=RECORD_LOG)
         self.epochs = epochs
         self.batch_size = batch_size
         self.lr_init = lr_init
@@ -134,13 +154,29 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         self.lgb_reg_alpha = lgb_reg_alpha
         self.lgb_reg_lambda = lgb_reg_lambda
         self.lgb_rand_state = lgb_rand_state
-        self.lgb_model = None
+        self.lgb_model = lgb.LGBMRegressor(num_leaves=self.lgb_num_leaves,
+                                           max_depth=self.lgb_max_depth,
+                                           learning_rate=self.lgb_learning_rate,
+                                           n_estimators=self.lgb_n_estimators,
+                                           min_split_gain=self.lgb_min_split_gain,
+                                           min_child_weight=self.lgb_min_child_weight,
+                                           min_child_samples=self.lgb_min_child_samples,
+                                           subsample=self.lgb_subsample,
+                                           subsample_freq=self.lgb_subsample_freq,
+                                           colsample_bytree=self.lgb_colsample_bytree,
+                                           reg_alpha=self.lgb_reg_alpha,
+                                           reg_lambda=self.lgb_reg_lambda,
+                                           random_state=self.lgb_rand_state)
+
+    def __del__(self):
+        print('%%%%%%%%__del__')
+        if K.backend() == 'tensorflow':
+            K.clear_session()
 
     def get_GRU_model(self, reader:DataReader):
         # Inputs
         name = Input(shape=[reader.name_seq_len], name="name")
         item_desc = Input(shape=[reader.item_desc_seq_len], name="item_desc")
-        # category_name = Input(shape=[reader.cat_name_seq_len], name="category_name")
         item_condition = Input(shape=[1], name="item_condition")
         category_main = Input(shape=[1], name="category_main")
         category_sub = Input(shape=[1], name="category_sub")
@@ -149,14 +185,14 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         num_vars = Input(shape=[1], name="num_vars")
         desc_len = Input(shape=[1], name="desc_len")
         name_len = Input(shape=[1], name="name_len")
-        desc_W_len = Input(shape=[1], name="desc_W_len")
+        desc_npc_cnt = Input(shape=[1], name="desc_npc_cnt")
 
         # Embedding的作用是配置字典size和词向量len后，根据call参数的indices，返回词向量.
         #  类似TF的embedding_lookup
         #  name.shape=[None, MAX_NAME_SEQ] -> emb_name.shape=[None, MAX_NAME_SEQ, output_dim]
-        emb_name = Embedding(input_dim=reader.n_text_dict_words, output_dim=self.name_emb_dim)(name)
-        emb_item_desc = Embedding(reader.n_text_dict_words, self.item_desc_emb_dim)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
-        # emb_category_name = Embedding(reader.n_text_dict_words, self.cat_name_emb_dim)(category_name)
+        # todo: 是否name和item_desciption的Embedding要共用? (词向量输出的维度不一样不能共用)
+        emb_name = Embedding(input_dim=reader.n_name_dict_words, output_dim=self.name_emb_dim)(name)
+        emb_item_desc = Embedding(reader.n_desc_dict_words, self.item_desc_emb_dim)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
         emb_cond_id = Embedding(reader.n_condition_id, self.item_cond_id_emb_dim)(item_condition)
         emb_cat_main = Embedding(reader.n_cat_main, self.cat_main_emb_dim)(category_main)
         emb_cat_sub = Embedding(reader.n_cat_sub, self.cat_sub_emb_dim)(category_sub)
@@ -164,7 +200,7 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         emb_brand = Embedding(reader.n_brand, self.brand_emb_dim)(brand)
         emb_desc_len = Embedding(reader.n_desc_max_len, self.desc_len_dim)(desc_len)
         emb_name_len = Embedding(reader.n_name_max_len, self.name_len_dim)(name_len)
-        emb_desc_W_len = Embedding(reader.n_desc_W_max_len, self.desc_len_dim)(desc_W_len)
+        emb_desc_npc_cnt = Embedding(reader.n_npc_max_cnt, self.npc_cnt_dim)(desc_npc_cnt)
 
         # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
         rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0], name='name_gru')(emb_name)
@@ -180,7 +216,7 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
                                    Flatten()(emb_cond_id),
                                    Flatten()(emb_desc_len),
                                    Flatten()(emb_name_len),
-                                   Flatten()(emb_desc_W_len),
+                                   Flatten()(emb_desc_npc_cnt),
                                    rnn_layer_name,
                                    rnn_layer_item_desc,
                                    # rnn_layer_cat_name,
@@ -188,14 +224,19 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
                                    name='concat_layer')
         main_layer = concat_layer
         # Concat[all] -> Dense1 -> ... -> DenseN
-        for i in range(len(self.dense_layers_dim)):
-            main_layer = Dropout(self.drop_out_layers[i])(Dense(self.dense_layers_dim[i], activation='relu')(main_layer))
+        for i in range(len(self.dense_layers_unit)):
+            main_layer = Dense(self.dense_layers_unit[i])(main_layer)
+            if self.bn_flag:
+                main_layer = BatchNormalization()(main_layer)
+            main_layer = Activation(activation='relu')(main_layer)
+            main_layer = Dropout(self.drop_out_layers[i])(main_layer)
 
         # output
         output = Dense(1, activation="linear")(main_layer)
 
         # model
-        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition, num_vars, desc_len, name_len, desc_W_len],  # category_name
+        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition,
+                              num_vars, desc_len, name_len, desc_npc_cnt],  # category_name
                       outputs=output)
         # optimizer = optimizers.RMSprop()
         optimizer = optimizers.Adam(lr=0.001, decay=0.0)
@@ -241,9 +282,13 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
 
         # print('~~~~~~~~~~~~In fit() type(X): {}'.format(type(X)))
         keras_X = self.data_reader.get_keras_dict_data(X)
+        keras_fit_start = time.time()
         history = self.emb_GRU_model.fit(keras_X, y, epochs=self.epochs, batch_size=self.batch_size, validation_split=0., # 0.01
                                          # callbacks=[TensorBoard('./logs/'+log_subdir)],
                                          verbose=RNN_VERBOSE)
+        RECORD_LOG('[self.emb_GRU_model.fit] cost {:.4f}s'.format(time.time() - keras_fit_start))
+        if LOCAL_FLAG:
+            print('[self.emb_GRU_model.fit] cost {:.4f}s'.format(time.time() - keras_fit_start))
 
         if input_LGB_all_concat:
             lgb_X = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
@@ -251,22 +296,10 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         else:
             name_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='name_gru', input_data=keras_X)
             item_desc_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='item_desc_gru', input_data=keras_X)
-            other_le_feats = X[['brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']].values
+            other_le_feats = X[['item_condition_id', 'shipping', 'desc_npc_cnt', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le',
+                                'brand_le', 'name_len', 'desc_len']].values
             print("prepare lgb_X,", name_gru_encode.shape, item_desc_gru_encode.shape, other_le_feats.shape)
             lgb_X = np.hstack((name_gru_encode, item_desc_gru_encode, other_le_feats))
-        self.lgb_model = lgb.LGBMRegressor(num_leaves=self.lgb_num_leaves,
-                                           max_depth=self.lgb_max_depth,
-                                           learning_rate=self.lgb_learning_rate,
-                                           n_estimators=self.lgb_n_estimators,
-                                           min_split_gain=self.lgb_min_split_gain,
-                                           min_child_weight=self.lgb_min_child_weight,
-                                           min_child_samples=self.lgb_min_child_samples,
-                                           subsample=self.lgb_subsample,
-                                           subsample_freq=self.lgb_subsample_freq,
-                                           colsample_bytree=self.lgb_colsample_bytree,
-                                           reg_alpha=self.lgb_reg_alpha,
-                                           reg_lambda=self.lgb_reg_lambda,
-                                           random_state=self.lgb_rand_state)
         self.lgb_model.fit(lgb_X, y)
 
         # Return the regressor
@@ -313,9 +346,9 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'name_emb_dim': [20],  # In name each word's vector length
-                'item_desc_emb_dim': [60],
-                'cat_name_emb_dim': [20],
+                'name_emb_dim': [15],  # In name each word's vector length
+                'item_desc_emb_dim': [70],
+                # 'cat_name_emb_dim': [20],
                 'brand_emb_dim': [10],
                 'cat_main_emb_dim': [10],
                 'cat_sub_emb_dim': [10],
@@ -323,13 +356,14 @@ class CvGridParams(object):
                 'item_cond_id_emb_dim': [5],
                 'desc_len_dim': [5],
                 'name_len_dim': [5],
-                'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units
-                'drop_out_layers': [(0.1, 0.1, 0.1, 0.1)],
-                'dense_layers_dim': [(512, 256, 128, 64)],
-                'epochs': [2],
+                'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
+                'bn_flag': [True],  # Batch-Norm switch
+                'drop_out_layers': [(0.1, 0.1, 0.1, 0.1)],  # DNN parameters
+                'dense_layers_unit': [(512, 256, 128, 64)],
+                'epochs': [2],  # LR parameters
                 'batch_size': [512*3],
-                'lr_init': [0.005],
-                'lr_final': [0.001],
+                'lr_init': [0.01485],  # np.geomspace(0.009, 0.02, 100),
+                'lr_final': [0.00056],  # np.geomspace(0.0001, 0.001, 100),
 
                 'lgb_num_leaves': [110],
                 'lgb_max_depth': [4],
@@ -365,6 +399,7 @@ def print_param(cv_grid_params:CvGridParams):
         if len(v) > 1:
             search_param_list.append(k)
     RECORD_LOG("}")
+    search_param_list.sort()
     return search_param_list
 
 
@@ -377,15 +412,29 @@ def train_model_with_gridsearch(regress_model:EmbLgbRegressor, sample_df, cv_gri
     # Check the list of available parameters with `estimator.get_params().keys()`
     print("keys are:::: {}".format(regress_model.get_params().keys()))
 
-    reg = GridSearchCV(estimator=regress_model,
-                       param_grid=cv_grid_params.all_params,
-                       n_jobs=N_CORE,
-                       cv=StratifiedKFold(n_splits=3, shuffle=True, random_state=cv_grid_params.rand_state),
-                       scoring=cv_grid_params.scoring,
-                       verbose=2,
-                       refit=True)
+    if USE_GRID_SEARCH:
+        reg = GridSearchCV(estimator=regress_model,
+                           param_grid=cv_grid_params.all_params,
+                           n_jobs=N_CORE,
+                           cv=KFold(n_splits=5, shuffle=True, random_state=cv_grid_params.rand_state),
+                           scoring=cv_grid_params.scoring,
+                           verbose=2,
+                           refit=False)
+    else:
+        reg = RandomizedSearchCV(estimator=regress_model,
+                                 param_distributions=cv_grid_params.all_params,
+                                 n_iter=24,
+                                 n_jobs=N_CORE,
+                                 cv=KFold(n_splits=5, shuffle=True, random_state=cv_grid_params.rand_state),
+                                 scoring=cv_grid_params.scoring,
+                                 verbose=2,
+                                 refit=False)
     reg.fit(sample_X, sample_y)
-    return reg
+
+    pprint(reg.best_params_)
+    regress_model = EmbLgbRegressor(data_reader=data_reader, **reg.best_params_)
+    regress_model.fit(sample_X, sample_y)
+    return reg, regress_model
 
 
 def get_cv_result_df(cv_results_:dict, adjust_paras:list, n_cv):
@@ -399,50 +448,56 @@ def get_cv_result_df(cv_results_:dict, adjust_paras:list, n_cv):
     return pd.DataFrame(data={key: cv_results_[key] for key in cols}, columns=cols)
 
 
-def show_CV_result(reg:GridSearchCV, adjust_paras, classifi_scoring):
+def show_CV_result(search_reg, adjust_paras, classifi_scoring):
     # pprint(reg.cv_results_)
     RECORD_LOG('XXXXX查看CV的结果XXXXXX')
-    RECORD_LOG(
-        '{}: MAX of mean_test_score = {}'.format(classifi_scoring, reg.cv_results_.get('mean_test_score').max()))
-    RECORD_LOG(
-        '{}: MAX of mean_train_score = {}'.format(classifi_scoring, reg.cv_results_.get('mean_train_score').max()))
-    cv_result_df = get_cv_result_df(reg.cv_results_, adjust_paras, reg.cv.n_splits)
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
+    RECORD_LOG('{}: MAX of mean_test_score = {}'.format(classifi_scoring, search_reg.cv_results_.get('mean_test_score').max()))
+    RECORD_LOG('{}: MAX of mean_train_score = {}'.format(classifi_scoring, search_reg.cv_results_.get('mean_train_score').max()))
+    cv_result_df = get_cv_result_df(search_reg.cv_results_, adjust_paras, search_reg.cv.n_splits)
+    def save_cv_result(file_):
+        base_dir = os.path.dirname(os.path.abspath(file_))
+        csv_dir = base_dir + '/cv_result'
+        if not os.path.exists(csv_dir):
+            os.makedirs(csv_dir)
+        return os.path.join(csv_dir, os.path.basename(file_).split('.py')[0] + '_tuning.csv')
+    with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
         RECORD_LOG('\n对各组调参参数的交叉训练验证细节为：\n{}'.format(cv_result_df))
+    cv_result_df.to_csv(save_cv_result(__file__), index=False)
     if len(adjust_paras) == 1 and platform.system() == 'Windows':
         every_para_score = pd.Series()
         every_para_score.name = adjust_paras[0]
-    for i in range(len(reg.cv_results_.get('mean_test_score'))):
+    for i in range(len(search_reg.cv_results_.get('mean_test_score'))):
         # RECORD_LOG('+++++++++++')
         # RECORD_LOG('mean_test_score = {}'.format(reg.cv_results_.get('mean_test_score')[i]))
         # RECORD_LOG('mean_train_score = {}'.format(reg.cv_results_.get('mean_train_score')[i]))
         param_str = "{"
         for k in adjust_paras:
-            param_str += "'{}': {}, ".format(k, reg.cv_results_.get('params')[i][k])
+            param_str += "'{}': {}, ".format(k, search_reg.cv_results_.get('params')[i][k])
         param_str = param_str[:-2] + "}"
         # RECORD_LOG('params = {}'.format(param_str))
         if len(adjust_paras) == 1 and platform.system() == 'Windows':
-            record_param_value = reg.cv_results_.get('params')[i].get(adjust_paras[0])
+            record_param_value = search_reg.cv_results_.get('params')[i].get(adjust_paras[0])
             if isinstance(record_param_value, tuple):
                 record_param_value = '{}'.format(reduce(lambda n_h, n_h1: str(n_h) + '_' + str(n_h1), record_param_value))
-            every_para_score.loc[record_param_value] = reg.cv_results_.get('mean_test_score')[i]
-    print('best_score_ = {}'.format(reg.best_score_))
-    RECORD_LOG('reg.best_score_: %f' % reg.best_score_)
-    for param_name in sorted(reg.best_params_.keys()):
+            every_para_score.loc[record_param_value] = search_reg.cv_results_.get('mean_test_score')[i]
+    print('best_score_ = {}'.format(search_reg.best_score_))
+    RECORD_LOG('reg.best_score_: %f' % search_reg.best_score_)
+    for param_name in sorted(search_reg.best_params_.keys()):
         if param_name in adjust_paras:
-            RECORD_LOG("调参选择为%s: %r" % (param_name, reg.best_params_[param_name]))
+            RECORD_LOG("调参选择为%s: %r" % (param_name, search_reg.best_params_[param_name]))
     if len(adjust_paras) == 1 and platform.system() == 'Windows':
         every_para_score.plot(kind='line', title=u'模型参数{}和评分{}的变化图示'.format(adjust_paras[0], classifi_scoring),
                               style='o-')
         plt.show()
 
 
-def selfregressor_predict_and_score(reg, valida_df):
+def selfregressor_predict_and_score(reg, last_valida_df):
     print('对样本集中留出的验证集进行预测:')
-    verify_X = valida_df.drop('target', axis=1)
+    verify_X = last_valida_df.drop('target', axis=1)
     predict_ = reg.predict(verify_X)
+    print('predict_.shape={}, isnan count={}'.format(predict_.shape, np.isnan(predict_).sum()))
     # print(predict_)
-    verify_golden = valida_df['target'].values
+    verify_golden = last_valida_df['target'].values
     explained_var_score = explained_variance_score(y_true=verify_golden, y_pred=predict_)
     mean_abs_error = mean_absolute_error(y_true=verify_golden, y_pred=predict_)
     mean_sqr_error = mean_squared_error(y_true=verify_golden, y_pred=predict_)
@@ -470,16 +525,14 @@ if __name__ == "__main__":
     RECORD_LOG("Handling categorical variables...")
     data_reader.le_encode()
     RECORD_LOG('[{:.4f}s] Finished PROCESSING CATEGORICAL DATA...'.format(time.time() - start_time))
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
-                           'display.height', None):
+    with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
         RECORD_LOG('\n{}'.format(data_reader.train_df.head(3)))
 
     # PROCESS TEXT: RAW
     RECORD_LOG("Text to seq process...")
     RECORD_LOG("   Fitting tokenizer...")
     data_reader.tokenizer_text_col()
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
-                           'display.height', None):
+    with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
         RECORD_LOG('\n{}'.format(data_reader.train_df.head(3)))
     RECORD_LOG('[{:.4f}s] Finished PROCESSING TEXT DATA...'.format(time.time() - start_time))
 
@@ -492,9 +545,9 @@ if __name__ == "__main__":
 
     # EXTRACT DEVELOPMENT TEST
     sample_df, last_valida_df, test_df = data_reader.split_get_train_validation()
+    last_valida_df.is_copy = None
     print(sample_df.shape)
     print(last_valida_df.shape)
-    last_valida_df.is_copy = None
 
     # 2. Check self-made estimator
     # check_estimator(LocalRegressor)  # Can not pass because need default DataReader in __init__.
@@ -503,28 +556,29 @@ if __name__ == "__main__":
     cv_grid_params = CvGridParams()
     adjust_para_list = print_param(cv_grid_params)
 
-    if len(adjust_para_list) > 0:
-
+    if LOCAL_FLAG and len(adjust_para_list) > 0:
+        print('==========Need GridCV')
         # 4. Use GridSearchCV to tuning model.
         regress_model = EmbLgbRegressor(data_reader=data_reader)
+        regress_model.emb_GRU_model.summary(print_fn=RECORD_LOG)
         print('Begin to train self-defined sklearn-API regressor.')
-        reg = train_model_with_gridsearch(regress_model, sample_df, cv_grid_params)
+        cv_reg, regress_model = train_model_with_gridsearch(regress_model, sample_df, cv_grid_params)
         RECORD_LOG('[{:.4f}s] Finished Grid Search and training.'.format(time.time() - start_time))
 
         # 5. See the CV result
-        show_CV_result(reg, adjust_paras=adjust_para_list, classifi_scoring=cv_grid_params.scoring)
+        show_CV_result(cv_reg, adjust_paras=adjust_para_list, classifi_scoring=cv_grid_params.scoring)
 
         # 6. Use Trained Regressor to predict the last validation dataset
         validation_scores = pd.DataFrame(columns=["explained_var_score", "mean_abs_error", "mean_sqr_error", "median_abs_error", "r2score"])
-        predict_y, score_list = selfregressor_predict_and_score(reg, last_valida_df)
+        predict_y, score_list = selfregressor_predict_and_score(regress_model, last_valida_df)
         validation_scores.loc["last_valida_df"] = score_list
-        with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.height', None):
+        with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
             RECORD_LOG("对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
         last_valida_df['predict'] = predict_y
         # analysis_predict_result(last_valida_df)
 
         # 7. Predict and submit
-        test_preds = reg.predict(test_df)
+        test_preds = regress_model.predict(test_df)
         test_preds = np.expm1(test_preds)
         RECORD_LOG('[{:.4f}s] Finished predicting test set...'.format(time.time() - start_time))
         submission = test_df[["test_id"]].copy()
@@ -532,19 +586,22 @@ if __name__ == "__main__":
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
     else:
+        print('==========Only Fit')
+        assert len(adjust_para_list) == 0
         cv_grid_params.rm_list_dict_params()
         regress_model = EmbLgbRegressor(data_reader=data_reader, **cv_grid_params.all_params)
+        regress_model.emb_GRU_model.summary(print_fn=RECORD_LOG)
 
         train_X = sample_df.drop('target', axis=1)
         train_y = sample_df['target'].values
         regress_model.fit(train_X, train_y)
 
         # 6. Use Trained Regressor to predict the last validation dataset
-        validation_scores = pd.DataFrame(columns=["explained_var_score", "mean_abs_error", "mean_sqr_error", "median_abs_error", "r2score"])
+        validation_scores = pd.DataFrame(
+            columns=["explained_var_score", "mean_abs_error", "mean_sqr_error", "median_abs_error", "r2score"])
         predict_y, score_list = selfregressor_predict_and_score(regress_model, last_valida_df)
         validation_scores.loc["last_valida_df"] = score_list
-        with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None,
-                               'display.height', None):
+        with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
             RECORD_LOG("对于样本集中留出的验证集整体打分有：\n{}".format(validation_scores))
         last_valida_df['predict'] = predict_y
 

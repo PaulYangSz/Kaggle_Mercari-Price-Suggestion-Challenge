@@ -70,6 +70,9 @@ if LOCAL_FLAG:
     if 'Logger' not in dir():
         Logger = start_logging()
 
+input_LGB_all_concat = True
+
+
 RECORD_LOG = lambda log_str: record_log(LOCAL_FLAG, log_str)
 
 SPEED_UP = False
@@ -90,7 +93,14 @@ else:
     np.random.seed(123)
 
 
-class SelfLocalRegressor(BaseEstimator, RegressorMixin):
+def time_measure(section, start, elapsed):
+    lap = time.time() - start - elapsed
+    elapsed = time.time() - start
+    RECORD_LOG("{:60}: {:15.2f}[sec]{:15.2f}[sec]".format(section, lap, elapsed))
+    return elapsed
+
+
+class EmbLgbRegressor(BaseEstimator, RegressorMixin):
     """ An sklearn-API regressor.
     Model 1: Embedding GRU ---- Embedding(text or cat) -> Concat[GRU(words) or Flatten(cat_vector)] ->  Dense -> Output
     Parameters
@@ -110,7 +120,11 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
                  bn_flag=False, drop_out_layers=(0.25, 0.1), dense_layers_unit=(128, 64),
                  name_filter_size_list=(2, 4), name_num_filters_list=(7, 7), name_strides_list=(1, 1), name_pool_size_list=(2, 2),
                  desc_filter_size_list=(2, 4), desc_num_filters_list=(10, 10), desc_strides_list=(1, 1), desc_pool_size_list=(2, 2),
-                 epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007):
+                 epochs=3, batch_size=512 * 3, lr_init=0.015, lr_final=0.007,
+                 lgb_num_leaves=100, lgb_max_depth=4, lgb_learning_rate=0.1, lgb_n_estimators=3000, lgb_min_split_gain=0.0,
+                 lgb_min_child_weight=1e-3, lgb_min_child_samples=20, lgb_subsample=0.8, lgb_subsample_freq=1, lgb_colsample_bytree=0.8,
+                 lgb_reg_alpha=0.0, lgb_reg_lambda=0.0, lgb_rand_state=20180122
+                 ):
         self.data_reader = data_reader
         self.name_emb_dim = name_emb_dim
         self.item_desc_emb_dim = item_desc_emb_dim
@@ -141,6 +155,33 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.batch_size = batch_size
         self.lr_init = lr_init
         self.lr_final = lr_final
+
+        self.lgb_num_leaves = lgb_num_leaves
+        self.lgb_max_depth = lgb_max_depth
+        self.lgb_learning_rate = lgb_learning_rate
+        self.lgb_n_estimators = lgb_n_estimators
+        self.lgb_min_split_gain = lgb_min_split_gain
+        self.lgb_min_child_weight = lgb_min_child_weight
+        self.lgb_min_child_samples = lgb_min_child_samples
+        self.lgb_subsample = lgb_subsample
+        self.lgb_subsample_freq = lgb_subsample_freq
+        self.lgb_colsample_bytree = lgb_colsample_bytree
+        self.lgb_reg_alpha = lgb_reg_alpha
+        self.lgb_reg_lambda = lgb_reg_lambda
+        self.lgb_rand_state = lgb_rand_state
+        self.lgb_model = lgb.LGBMRegressor(num_leaves=self.lgb_num_leaves,
+                                           max_depth=self.lgb_max_depth,
+                                           learning_rate=self.lgb_learning_rate,
+                                           n_estimators=self.lgb_n_estimators,
+                                           min_split_gain=self.lgb_min_split_gain,
+                                           min_child_weight=self.lgb_min_child_weight,
+                                           min_child_samples=self.lgb_min_child_samples,
+                                           subsample=self.lgb_subsample,
+                                           subsample_freq=self.lgb_subsample_freq,
+                                           colsample_bytree=self.lgb_colsample_bytree,
+                                           reg_alpha=self.lgb_reg_alpha,
+                                           reg_lambda=self.lgb_reg_lambda,
+                                           random_state=self.lgb_rand_state)
 
     def __del__(self):
         print('%%%%%%%%__del__')
@@ -177,7 +218,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         emb_desc_npc_cnt = Embedding(reader.n_npc_max_cnt, self.npc_cnt_dim)(desc_npc_cnt)
 
         # CNN: Use Conv1D and MaxPooling1D(or GlobalMaxPooling1D)
-        def cnn_layer_output(filter_size_list, num_filters_list, strides_list, pool_size_list, emb_words):
+        def cnn_layer_output(filter_size_list, num_filters_list, strides_list, pool_size_list, emb_words, layer_name):
             conv_blocks = []
             assert len(filter_size_list) == len(num_filters_list) and len(num_filters_list) == len(strides_list) and len(strides_list) == len(pool_size_list)
             for i in range(len(filter_size_list)):
@@ -193,25 +234,26 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
                 conv = MaxPooling1D(pool_size=pool_size_list[i])(conv)
                 conv = Flatten()(conv)
                 conv_blocks.append(conv)
-            return Concatenate()(conv_blocks) if len(conv_blocks) > 1 else conv_blocks[0]
-        cnn_layer_name = cnn_layer_output(self.name_filter_size_list, self.name_num_filters_list, self.name_strides_list, self.name_pool_size_list, emb_name)
-        cnn_layer_item_desc = cnn_layer_output(self.desc_filter_size_list, self.desc_num_filters_list, self.desc_strides_list, self.desc_pool_size_list, emb_item_desc)
+            return Concatenate(name=layer_name)(conv_blocks) if len(conv_blocks) > 1 else conv_blocks[0]
+        cnn_layer_name = cnn_layer_output(self.name_filter_size_list, self.name_num_filters_list, self.name_strides_list, self.name_pool_size_list, emb_name, 'name_cnn')
+        cnn_layer_item_desc = cnn_layer_output(self.desc_filter_size_list, self.desc_num_filters_list, self.desc_strides_list, self.desc_pool_size_list, emb_item_desc, 'item_desc_cnn')
         # rnn_layer_cat_name = GRU(units=self.GRU_layers_out_dim[2])(emb_category_name)
 
         # main layer
         # 连接列表中的Tensor，按照axis组成一个大的Tensor
-        main_layer = concatenate([Flatten()(emb_brand),  # [None, 1, 10] -> [None, 10]
-                                  Flatten()(emb_cat_main),
-                                  Flatten()(emb_cat_sub),
-                                  Flatten()(emb_cat_sub2),
-                                  Flatten()(emb_cond_id),
-                                  Flatten()(emb_desc_len),
-                                  Flatten()(emb_name_len),
-                                  Flatten()(emb_desc_npc_cnt),
-                                  cnn_layer_name,
-                                  cnn_layer_item_desc,
-                                  # rnn_layer_cat_name,
-                                  num_vars])
+        concat_layer = concatenate([Flatten()(emb_brand),  # [None, 1, 10] -> [None, 10]
+                                   Flatten()(emb_cat_main),
+                                   Flatten()(emb_cat_sub),
+                                   Flatten()(emb_cat_sub2),
+                                   Flatten()(emb_cond_id),
+                                   Flatten()(emb_desc_len),
+                                   Flatten()(emb_name_len),
+                                   Flatten()(emb_desc_npc_cnt),
+                                    cnn_layer_name,
+                                    cnn_layer_item_desc,
+                                   num_vars],
+                                   name='concat_layer')
+        main_layer = concat_layer
         # Concat[all] -> Dense1 -> ... -> DenseN
         for i in range(len(self.dense_layers_unit)):
             main_layer = Dense(self.dense_layers_unit[i])(main_layer)
@@ -232,6 +274,11 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         model.compile(loss="mse", optimizer=optimizer)
         return model
 
+    def get_GRU_interlayer_out(self, trained_gru_model:Model, layer_name:str, input_data):
+        intermediate_layer_model = Model(inputs=trained_gru_model.input,
+                                         outputs=trained_gru_model.get_layer(layer_name).output)
+        intermediate_output = intermediate_layer_model.predict(input_data)
+        return intermediate_output
 
     def fit(self, X, y):
         """A reference implementation of a fitting function for a regressor.
@@ -252,6 +299,9 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.X_ = X
         self.y_ = y
 
+        start = time.time()
+        elapsed = 0
+
         # FITTING THE MODEL
         steps = int(X.shape[0] / self.batch_size) * self.epochs
         # final_lr=init_lr * (1/(1+decay))**(steps-1)
@@ -266,6 +316,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
 
         # print('~~~~~~~~~~~~In fit() type(X): {}'.format(type(X)))
         keras_X = self.data_reader.get_keras_dict_data(X)
+        elapsed = time_measure("data_reader.get_keras_dict_data(X)", start, elapsed)
         keras_fit_start = time.time()
         history = self.emb_GRU_model.fit(keras_X, y, epochs=self.epochs, batch_size=self.batch_size, validation_split=0., # 0.01
                                          # callbacks=[TensorBoard('./logs/'+log_subdir)],
@@ -273,6 +324,21 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         RECORD_LOG('[self.emb_GRU_model.fit] cost {:.4f}s'.format(time.time() - keras_fit_start))
         if LOCAL_FLAG:
             print('[self.emb_GRU_model.fit] cost {:.4f}s'.format(time.time() - keras_fit_start))
+        elapsed = time_measure("emb_GRU_model.fit(keras_X, y)", start, elapsed)
+
+        if input_LGB_all_concat:
+            lgb_X = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
+            print('interlayer_output: type={}, shape = {}'.format(type(lgb_X), lgb_X.shape))
+        else:
+            name_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='name_cnn', input_data=keras_X)
+            item_desc_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='item_desc_cnn', input_data=keras_X)
+            other_le_feats = X[['item_condition_id', 'shipping', 'desc_npc_cnt', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le',
+                                'brand_le', 'name_len', 'desc_len']].values
+            print("prepare lgb_X,", name_gru_encode.shape, item_desc_gru_encode.shape, other_le_feats.shape)
+            lgb_X = np.hstack((name_gru_encode, item_desc_gru_encode, other_le_feats))
+        elapsed = time_measure("lgb_X: get_GRU_interlayer_out()", start, elapsed)
+        self.lgb_model.fit(lgb_X, y)
+        elapsed = time_measure("lgb_model.fit()", start, elapsed)
 
         # Return the regressor
         return self
@@ -295,11 +361,27 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         # Input validation
         # X = check_array(X)  # ValueError: setting an array element with a sequence. This is caused by "XXX_seq"
 
-        keras_X = self.data_reader.get_keras_dict_data(X)
-        gru_y = self.emb_GRU_model.predict(keras_X, batch_size=70000, verbose=RNN_VERBOSE)
-        gru_y = gru_y.reshape(gru_y.shape[0])
+        start = time.time()
+        elapsed = 0
 
-        return gru_y
+        keras_X = self.data_reader.get_keras_dict_data(X)
+        elapsed = time_measure("Predict: data_reader.get_keras_dict_data(X)", start, elapsed)
+
+        if input_LGB_all_concat:
+            lgb_X = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
+            print('interlayer_output: type={}, shape = {}'.format(type(lgb_X), lgb_X.shape))
+        else:
+            name_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='name_cnn', input_data=keras_X)
+            item_desc_gru_encode = self.get_GRU_interlayer_out(self.emb_GRU_model, layer_name='item_desc_cnn', input_data=keras_X)
+            other_le_feats = X[['brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']].values
+            print("prepare lgb_X,", name_gru_encode.shape, item_desc_gru_encode.shape, other_le_feats.shape)
+            lgb_X = np.hstack((name_gru_encode, item_desc_gru_encode, other_le_feats))
+        elapsed = time_measure("Predict: lgb_X = get_GRU_interlayer_out()", start, elapsed)
+
+        pred_y = self.lgb_model.predict(lgb_X)
+        elapsed = time_measure("lgb_model.predict()", start, elapsed)
+
+        return pred_y
 
 
 class CvGridParams(object):
@@ -336,6 +418,20 @@ class CvGridParams(object):
                 'batch_size': [512*3],
                 'lr_init': np.geomspace(0.006, 0.008, 100),  # [0.00705042933244],
                 'lr_final': np.geomspace(0.0002, 0.001, 100),  # [0.000317165257928]
+
+                'lgb_num_leaves': [110],
+                'lgb_max_depth': [8],
+                'lgb_learning_rate': [0.5, 0.25, 0.75],
+                'lgb_n_estimators': [3000],
+                'lgb_min_split_gain': [0.0, 1.0],
+                'lgb_min_child_weight': [0.01],
+                'lgb_min_child_samples': [20, 200],
+                'lgb_subsample': [0.8],
+                'lgb_subsample_freq': [1, 10],
+                'lgb_colsample_bytree': [0.6],
+                'lgb_reg_alpha': [0.5],
+                'lgb_reg_lambda': [0.0],
+                'lgb_rand_state': [self.rand_state],
             }
         else:
             print("Construct CvGridParams with error param_type: " + param_type)
@@ -361,8 +457,9 @@ def print_param(cv_grid_params:CvGridParams):
     return search_param_list
 
 
-def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_grid_params):
+def train_model_with_gridsearch(regress_model:EmbLgbRegressor, sample_df, cv_grid_params:CvGridParams):
     sample_X = sample_df.drop('target', axis=1)
+    print('sample_X.cols={}'.format(sample_X.columns))
     # sample_X = sample_X[['name_int_seq', 'desc_int_seq', 'brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']]  # , 'cat_int_seq'
     sample_y = sample_df['target']
 
@@ -380,16 +477,16 @@ def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_
     else:
         reg = RandomizedSearchCV(estimator=regress_model,
                                  param_distributions=cv_grid_params.all_params,
-                                 n_iter=24,
+                                 n_iter=3,
                                  n_jobs=N_CORE,
-                                 cv=KFold(n_splits=5, shuffle=True, random_state=cv_grid_params.rand_state),
+                                 cv=KFold(n_splits=4, shuffle=True, random_state=cv_grid_params.rand_state),
                                  scoring=cv_grid_params.scoring,
                                  verbose=2,
                                  refit=False)
     reg.fit(sample_X, sample_y)
 
     pprint(reg.best_params_)
-    regress_model = SelfLocalRegressor(data_reader=data_reader, **reg.best_params_)
+    regress_model = EmbLgbRegressor(data_reader=data_reader, **reg.best_params_)
     regress_model.fit(sample_X, sample_y)
     return reg, regress_model
 
@@ -516,7 +613,7 @@ if __name__ == "__main__":
     if LOCAL_FLAG and len(adjust_para_list) > 0:
         print('==========Need GridCV')
         # 4. Use GridSearchCV to tuning model.
-        regress_model = SelfLocalRegressor(data_reader=data_reader)
+        regress_model = EmbLgbRegressor(data_reader=data_reader)
         regress_model.emb_GRU_model.summary(print_fn=RECORD_LOG)
         print('Begin to train self-defined sklearn-API regressor.')
         cv_reg, regress_model = train_model_with_gridsearch(regress_model, sample_df, cv_grid_params)
@@ -546,7 +643,7 @@ if __name__ == "__main__":
         print('==========Only Fit')
         assert len(adjust_para_list) == 0
         cv_grid_params.rm_list_dict_params()
-        regress_model = SelfLocalRegressor(data_reader=data_reader, **cv_grid_params.all_params)
+        regress_model = EmbLgbRegressor(data_reader=data_reader, **cv_grid_params.all_params)
         regress_model.emb_GRU_model.summary(print_fn=RECORD_LOG)
 
         train_X = sample_df.drop('target', axis=1)

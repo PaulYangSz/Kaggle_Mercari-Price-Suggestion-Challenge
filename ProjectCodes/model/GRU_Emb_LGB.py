@@ -217,16 +217,16 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         # main layer
         # 连接列表中的Tensor，按照axis组成一个大的Tensor
         concat_layer = concatenate([Flatten()(emb_brand),  # [None, 1, 10] -> [None, 10]
-                                   Flatten()(emb_cat_main),
-                                   Flatten()(emb_cat_sub),
-                                   Flatten()(emb_cat_sub2),
-                                   Flatten()(emb_cond_id),
-                                   Flatten()(emb_desc_len),
-                                   Flatten()(emb_name_len),
-                                   Flatten()(emb_desc_npc_cnt),
-                                   rnn_layer_name,
-                                   rnn_layer_item_desc,
-                                   num_vars],
+                                    Flatten()(emb_cat_main),
+                                    Flatten()(emb_cat_sub),
+                                    Flatten()(emb_cat_sub2),
+                                    Flatten()(emb_cond_id),
+                                    Flatten()(emb_desc_len),
+                                    Flatten()(emb_name_len),
+                                    Flatten()(emb_desc_npc_cnt),
+                                    rnn_layer_name,
+                                    rnn_layer_item_desc,
+                                    num_vars],
                                    name='concat_layer')
         main_layer = concat_layer
         # Concat[all] -> Dense1 -> ... -> DenseN

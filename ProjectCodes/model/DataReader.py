@@ -457,10 +457,8 @@ class DataReader():
         name_tok_raw = Tokenizer(num_words=150000, filters='\t\n')
         desc_tok_raw = Tokenizer(num_words=300000, filters='\t\n')
         # 这里构成raw文本的时候没有加入test数据是因为就算test中有新出现的词也不会在后续训练中改变词向量
-        name_raw_text = np.hstack([self.train_df['name'].str.lower(),
-                                   self.test_df['name'].str.lower()])
-        desc_raw_text = np.hstack([self.train_df['item_description'].str.lower(),
-                                   self.test_df['item_description'].str.lower()])
+        name_raw_text = np.hstack([self.train_df['name'].str.lower()])
+        desc_raw_text = np.hstack([self.train_df['item_description'].str.lower()])
         name_tok_raw.fit_on_texts(name_raw_text)
         desc_tok_raw.fit_on_texts(desc_raw_text)
         self.n_name_dict_words = min(max(name_tok_raw.word_index.values()), name_tok_raw.num_words) + 2
@@ -552,14 +550,11 @@ class DataReader():
         def cols_astype_to_str(dataset):
             dataset['shipping'] = dataset['shipping'].astype(str)
             dataset['item_condition_id'] = dataset['item_condition_id'].astype(str)
-            dataset['desc_len'] = dataset['desc_len'].astype(str)
-            dataset['name_len'] = dataset['name_len'].astype(str)
-            dataset['desc_npc_cnt'] = dataset['desc_npc_cnt'].astype(str)
+            # dataset['desc_len'] = dataset['desc_len'].astype(str)
+            # dataset['name_len'] = dataset['name_len'].astype(str)
+            # dataset['desc_npc_cnt'] = dataset['desc_npc_cnt'].astype(str)
         cols_astype_to_str(self.train_df)
         cols_astype_to_str(self.test_df)
-
-        merge_df = pd.concat([self.train_df, self.test_df]).reset_index(drop=True)[self.test_df.columns]
-        # print('~~Check~~ merge_df.axes = {}'.format(merge_df.axes))
 
         default_preprocessor = CountVectorizer().build_preprocessor()
         def build_preprocessor(field):
@@ -590,15 +585,15 @@ class DataReader():
             ('item_condition_id', CountVectorizer(
                 token_pattern='\d+',
                 preprocessor=build_preprocessor('item_condition_id'))),
-            ('desc_len', CountVectorizer(
-                token_pattern='\d+',
-                preprocessor=build_preprocessor('desc_len'))),
-            ('name_len', CountVectorizer(
-                token_pattern='\d+',
-                preprocessor=build_preprocessor('name_len'))),
-            ('desc_npc_cnt', CountVectorizer(
-                token_pattern='\d+',
-                preprocessor=build_preprocessor('desc_npc_cnt'))),
+            # ('desc_len', CountVectorizer(
+            #     token_pattern='\d+',
+            #     preprocessor=build_preprocessor('desc_len'))),
+            # ('name_len', CountVectorizer(
+            #     token_pattern='\d+',
+            #     preprocessor=build_preprocessor('name_len'))),
+            # ('desc_npc_cnt', CountVectorizer(
+            #     token_pattern='\d+',
+            #     preprocessor=build_preprocessor('desc_npc_cnt'))),
             ('item_description', TfidfVectorizer(
                 token_pattern=r"(?u)\S+",
                 ngram_range=(1, 2),
@@ -606,14 +601,16 @@ class DataReader():
                 preprocessor=build_preprocessor('item_description'))),
         ])
         feat_union_start = time.time()
-        feat_union.fit(merge_df.values)
+        feat_union.fit(self.train_df.drop('price', axis=1).values)
         record_log(self.local_flag, 'FeatureUnion fit() cost {}s'.format(time.time() - feat_union_start))
         sparse_train_X = feat_union.transform(self.train_df.drop('price', axis=1).values)
+        sparse_train_X = hstack((sparse_train_X, self.train_df[['desc_len', 'name_len', 'desc_npc_cnt']].values), format='csr')
         if 'target' in self.train_df.columns:
             train_y = self.train_df['target']
         else:
             train_y = np.log1p(self.train_df['price'])
         sparse_test_X = feat_union.transform(self.test_df.values)
+        sparse_test_X = hstack((sparse_test_X, self.test_df[['desc_len', 'name_len', 'desc_npc_cnt']].values), format='csr')
         record_log(self.local_flag, 'FeatureUnion fit&transform() cost {}s'.format(time.time() - feat_union_start))
 
         X_train, X_test, y_train, y_test = train_test_split(sparse_train_X, train_y, random_state=123, test_size=0.01)

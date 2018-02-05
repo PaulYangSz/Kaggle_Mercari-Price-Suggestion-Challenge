@@ -26,6 +26,7 @@ import time
 import re
 from nltk.corpus import stopwords
 import math
+from scipy.sparse import hstack
 
 # set seed
 np.random.seed(123)
@@ -254,8 +255,8 @@ elapsed = time_measure("LabelEncoder(brand_name & subcat0/1/2)", start, elapsed)
 
 
 print("Transforming text data to sequences...")
-name_raw_text = np.hstack([full_df.name.str.lower()])
-desc_raw_text = np.hstack([full_df.item_description.str.lower()])
+name_raw_text = np.hstack([train_df.name.str.lower()])
+desc_raw_text = np.hstack([train_df.item_description.str.lower()])
 
 print("Fitting tokenizer...")
 name_tok_raw = Tokenizer(num_words=150000, filters='\t\n')
@@ -325,12 +326,12 @@ X_test = get_rnn_data(test)
 
 
 #our own loss function
-def root_mean_squared_logarithmic_error(y_true, y_pred):
-    first_log = K.log(K.clip(y_pred, K.epsilon(), None) + 1.)
-    second_log = K.log(K.clip(y_true, K.epsilon(), None) + 1.)
-    return K.sqrt(K.mean(K.square(first_log - second_log), axis=-1)+0.0000001)
-def root_mean_squared_error(y_true, y_pred):
-    return K.sqrt(K.mean(K.square(y_pred - y_true), axis=-1)+0.0000001)
+# def root_mean_squared_logarithmic_error(y_true, y_pred):
+#     first_log = K.log(K.clip(y_pred, K.epsilon(), None) + 1.)
+#     second_log = K.log(K.clip(y_true, K.epsilon(), None) + 1.)
+#     return K.sqrt(K.mean(K.square(first_log - second_log), axis=-1)+0.0000001)
+# def root_mean_squared_error(y_true, y_pred):
+#     return K.sqrt(K.mean(K.square(y_pred - y_true), axis=-1)+0.0000001)
 
 
 # build the model
@@ -448,6 +449,7 @@ elapsed = time_measure("rnn_model.predict()", start, elapsed)
 
 #Ridge modelling
 # Concatenate train - dev - test data for furthur handling
+# 清除非测试集上对词袋模型的训练
 full_df = pd.concat([train_df, dev_df, test_df])
 
 
@@ -458,9 +460,9 @@ full_df['subcat_2'] = full_df['subcat_2'].astype(str)
 full_df['brand_name'] = full_df['brand_name'].astype(str)
 full_df['shipping'] = full_df['shipping'].astype(str)
 full_df['item_condition_id'] = full_df['item_condition_id'].astype(str)
-full_df['desc_len'] = full_df['desc_len'].astype(str)
-full_df['name_len'] = full_df['name_len'].astype(str)
-full_df['desc_npc_cnt'] = full_df['desc_npc_cnt'].astype(str)
+# full_df['desc_len'] = full_df['desc_len'].astype(str)
+# full_df['name_len'] = full_df['name_len'].astype(str)
+# full_df['desc_npc_cnt'] = full_df['desc_npc_cnt'].astype(str)
 # full_df['item_description'] = full_df['item_description'].fillna('No description yet').astype(str)
 
 
@@ -494,15 +496,15 @@ vectorizer = FeatureUnion([
     ('item_condition_id', CountVectorizer(
         token_pattern='\d+',
         preprocessor=build_preprocessor('item_condition_id'))),
-    ('desc_len', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('desc_len'))),
-    ('name_len', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('name_len'))),
-    ('desc_npc_cnt', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('desc_npc_cnt'))),
+    # ('desc_len', CountVectorizer(
+    #     token_pattern='\d+',
+    #     preprocessor=build_preprocessor('desc_len'))),
+    # ('name_len', CountVectorizer(
+    #     token_pattern='\d+',
+    #     preprocessor=build_preprocessor('name_len'))),
+    # ('desc_npc_cnt', CountVectorizer(
+    #     token_pattern='\d+',
+    #     preprocessor=build_preprocessor('desc_npc_cnt'))),
     ('item_description', TfidfVectorizer(
         token_pattern=r"(?u)\S+",
         ngram_range=(1, 2),
@@ -510,7 +512,9 @@ vectorizer = FeatureUnion([
         preprocessor=build_preprocessor('item_description'))),
 ])
 
-X = vectorizer.fit_transform(full_df.values)
+vectorizer.fit(full_df.values[:n_trains])
+X = vectorizer.transform(full_df.values)
+X = hstack((X, full_df[['desc_len', 'name_len', 'desc_npc_cnt']].values), format='csr')
 elapsed = time_measure("Ridge--FeatureUnion()", start, elapsed)
 
 X_train = X[:n_trains]

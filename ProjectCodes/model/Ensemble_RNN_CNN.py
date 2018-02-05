@@ -18,7 +18,8 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
-from keras.layers import Input, Dropout, Dense, concatenate, GRU, Embedding, Flatten, Activation, BatchNormalization
+from keras.layers import Input, Dropout, Dense, concatenate, GRU, Embedding, Flatten, Activation, BatchNormalization, \
+    Conv1D, MaxPooling1D, Concatenate
 from keras.optimizers import Adam
 from keras.models import Model
 from keras import backend as K
@@ -32,7 +33,7 @@ np.random.seed(123)
 BN_FLAG = True
 USE_NAME_BRAND_MAP = True
 RNN_VERBOSE = 10
-SPEED_UP = False
+SPEED_UP = True
 if SPEED_UP:
     import pyximport
     pyximport.install()
@@ -405,12 +406,6 @@ def new_rnn_model(lr=0.001, decay=0.0):
 
     return model
 
-
-model = new_rnn_model()
-model.summary()
-del model
-
-
 #Fit RNN model to train data
 
 # Set hyper parameters for the model
@@ -425,6 +420,7 @@ lr_decay = exp_decay(lr_init, lr_fin, steps)
 
 # Create model and fit it with training dataset.
 rnn_model = new_rnn_model(lr=lr_init, decay=lr_decay)
+rnn_model.summary()
 rnn_model.fit(X_train, Y_train, epochs=epochs, batch_size=BATCH_SIZE,validation_data=(X_dev, Y_dev), verbose=RNN_VERBOSE)
 elapsed = time_measure("rnn_model.fit()", start, elapsed)
 
@@ -446,143 +442,148 @@ rnn_preds = np.expm1(rnn_preds)
 elapsed = time_measure("rnn_model.predict()", start, elapsed)
 
 
-#Ridge modelling
-# Concatenate train - dev - test data for furthur handling
-full_df = pd.concat([train_df, dev_df, test_df])
+# 构造CNN来融合
+def new_cnn_model(lr=0.001, decay=0.0):
+    name = Input(shape=[X_train["name"].shape[1]], name="name")
+    item_desc = Input(shape=[X_train["item_desc"].shape[1]], name="item_desc")
+    brand_name = Input(shape=[1], name="brand_name")
+    item_condition = Input(shape=[1], name="item_condition")
+    num_vars = Input(shape=[X_train["num_vars"].shape[1]], name="num_vars")
+    desc_len = Input(shape=[1], name="desc_len")
+    name_len = Input(shape=[1], name="name_len")
+    desc_npc_cnt = Input(shape=[1], name="desc_npc_cnt")
+    subcat_0 = Input(shape=[1], name="subcat_0")
+    subcat_1 = Input(shape=[1], name="subcat_1")
+    subcat_2 = Input(shape=[1], name="subcat_2")
+
+    # Embeddings layers (adjust outputs to help model)
+    emb_name = Embedding(MAX_NAME_DICT_WORDS, 20)(name)
+    emb_item_desc = Embedding(MAX_DESC_DICT_WORDS, 60)(item_desc)
+    emb_brand_name = Embedding(MAX_BRAND, 10)(brand_name)
+    emb_item_condition = Embedding(MAX_CONDITION, 5)(item_condition)
+    emb_desc_len = Embedding(MAX_DESC_LEN, 5)(desc_len)
+    emb_name_len = Embedding(MAX_NAME_LEN, 5)(name_len)
+    emb_desc_npc_cnt = Embedding(MAX_NPC_LEN, 5)(desc_npc_cnt)
+    emb_subcat_0 = Embedding(MAX_SUBCAT_0, 10)(subcat_0)
+    emb_subcat_1 = Embedding(MAX_SUBCAT_1, 10)(subcat_1)
+    emb_subcat_2 = Embedding(MAX_SUBCAT_2, 10)(subcat_2)
+
+    # CNN: Use Conv1D and MaxPooling1D(or GlobalMaxPooling1D)
+    def cnn_layer_output(filter_size_list, num_filters_list, strides_list, pool_size_list, emb_words):
+        conv_blocks = []
+        assert len(filter_size_list) == len(num_filters_list) and len(num_filters_list) == len(strides_list) and len(strides_list) == len(pool_size_list)
+        for i in range(len(filter_size_list)):
+            # [Input] (samples_n, time_n, dim) -> [Output] (samples_n, new_time_n, filter_n)
+            conv = Conv1D(filters=num_filters_list[i],
+                          kernel_size=filter_size_list[i],
+                          padding="valid",
+                          strides=strides_list[i])(emb_words)
+            if BN_FLAG:
+                conv = BatchNormalization()(conv)
+            conv = Activation(activation="relu")(conv)
+            # [Input] (samples_n, time_n, feat_n) -> [Output] (samples_n, down_time_n, feat_n)
+            conv = MaxPooling1D(pool_size=pool_size_list[i])(conv)
+            conv = Flatten()(conv)
+            conv_blocks.append(conv)
+        return Concatenate()(conv_blocks) if len(conv_blocks) > 1 else conv_blocks[0]
+    cnn_layer_name = cnn_layer_output(filter_size_list=[3, 4], num_filters_list=[7, 7], strides_list=[2, 2],
+                                      pool_size_list=[3, 3], emb_words=emb_name)
+    cnn_layer_item_desc = cnn_layer_output(filter_size_list=[2, 3], num_filters_list=[10, 10], strides_list=[1, 1],
+                                           pool_size_list=[3, 3], emb_words=emb_item_desc)
+
+    # main layers
+    main_layer = concatenate([
+        Flatten()(emb_brand_name),
+        Flatten()(emb_item_condition),
+        Flatten()(emb_desc_len),
+        Flatten()(emb_name_len),
+        Flatten()(emb_desc_npc_cnt),
+        Flatten()(emb_subcat_0),
+        Flatten()(emb_subcat_1),
+        Flatten()(emb_subcat_2),
+        cnn_layer_name,
+        cnn_layer_item_desc,
+        num_vars,
+    ])
+
+    # Concat[all] -> Dense1 -> ... -> DenseN
+    dense_layers_unit = [512, 256, 128, 64]
+    drop_out_layers = [0.1, 0.1, 0.1, 0.1]
+    for i in range(len(dense_layers_unit)):
+        main_layer = Dense(dense_layers_unit[i])(main_layer)
+        if BN_FLAG:
+            main_layer = BatchNormalization()(main_layer)
+        main_layer = Activation(activation='relu')(main_layer)
+        main_layer = Dropout(drop_out_layers[i])(main_layer)
+    # (increasing the nodes or adding layers does not effect the time quite as much as the cnn layers)
+
+    # the output layer.
+    output = Dense(1, activation="linear")(main_layer)
+
+    model = Model([name, item_desc, brand_name, item_condition,
+                   num_vars, desc_len, name_len, desc_npc_cnt, subcat_0, subcat_1, subcat_2], output)
+
+    optimizer = Adam(lr=lr, decay=decay)
+
+    # (mean squared error loss function works as well as custom functions)
+    model.compile(loss='mse', optimizer=optimizer)
+
+    return model
 
 
-print("Change types as str for CountVectorizer/TfidfVectorizer ...")
-full_df['subcat_0'] = full_df['subcat_0'].astype(str)
-full_df['subcat_1'] = full_df['subcat_1'].astype(str)
-full_df['subcat_2'] = full_df['subcat_2'].astype(str)
-full_df['brand_name'] = full_df['brand_name'].astype(str)
-full_df['shipping'] = full_df['shipping'].astype(str)
-full_df['item_condition_id'] = full_df['item_condition_id'].astype(str)
-full_df['desc_len'] = full_df['desc_len'].astype(str)
-full_df['name_len'] = full_df['name_len'].astype(str)
-full_df['desc_npc_cnt'] = full_df['desc_npc_cnt'].astype(str)
-# full_df['item_description'] = full_df['item_description'].fillna('No description yet').astype(str)
+#Fit CNN model to train data
+# Calculate learning rate decay
+lr_init, lr_fin = 0.00705042933244, 0.000317165257928
+lr_decay = exp_decay(lr_init, lr_fin, steps)
+
+# Create model and fit it with training dataset.
+cnn_model = new_cnn_model(lr=lr_init, decay=lr_decay)
+cnn_model.summary()
+cnn_model.fit(X_train, Y_train, epochs=epochs, batch_size=BATCH_SIZE,validation_data=(X_dev, Y_dev), verbose=RNN_VERBOSE)
+elapsed = time_measure("cnn_model.fit()", start, elapsed)
 
 
-print("Vectorizing data for Ridge Modeling...")
-default_preprocessor = CountVectorizer().build_preprocessor()
-def build_preprocessor(field):
-    field_idx = list(full_df.columns).index(field)
-    return lambda x: default_preprocessor(x[field_idx])
-
-vectorizer = FeatureUnion([
-    ('name', CountVectorizer(
-        token_pattern=r"(?u)\S+",
-        ngram_range=(1, 2),
-        max_features=50000,
-        preprocessor=build_preprocessor('name'))),
-    ('subcat_0', CountVectorizer(
-        token_pattern='.+',
-        preprocessor=build_preprocessor('subcat_0'))),
-    ('subcat_1', CountVectorizer(
-        token_pattern='.+',
-        preprocessor=build_preprocessor('subcat_1'))),
-    ('subcat_2', CountVectorizer(
-        token_pattern='.+',
-        preprocessor=build_preprocessor('subcat_2'))),
-    ('brand_name', CountVectorizer(
-        token_pattern='.+',
-        preprocessor=build_preprocessor('brand_name'))),
-    ('shipping', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('shipping'))),
-    ('item_condition_id', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('item_condition_id'))),
-    ('desc_len', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('desc_len'))),
-    ('name_len', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('name_len'))),
-    ('desc_npc_cnt', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('desc_npc_cnt'))),
-    ('item_description', TfidfVectorizer(
-        token_pattern=r"(?u)\S+",
-        ngram_range=(1, 2),
-        max_features=100000,
-        preprocessor=build_preprocessor('item_description'))),
-])
-
-X = vectorizer.fit_transform(full_df.values)
-elapsed = time_measure("Ridge--FeatureUnion()", start, elapsed)
-
-X_train = X[:n_trains]
-Y_train = train_df.target.values.reshape(-1, 1)
-
-X_dev = X[n_trains:n_trains+n_devs]
-Y_dev = dev_df.target.values.reshape(-1, 1)
-
-X_test = X[n_trains+n_devs:]
-print(X.shape, X_train.shape, X_dev.shape, X_test.shape)
-
-
-print("Fitting Ridge model on training examples...")
-ridge_model = Ridge(solver='auto', fit_intercept=True, alpha=1.0,max_iter=100, normalize=False, tol=0.05, random_state = 1)
-ridge_modelCV = Ridge(solver='auto', fit_intercept=True, alpha=5.0,max_iter=None, normalize=False, tol=0.05, random_state = 1)
-# ridge_modelCV = RidgeCV(fit_intercept=True, alphas=[5.0], normalize=False, cv = 2, scoring='neg_mean_squared_error')
-ridge_model.fit(X_train, Y_train)
-ridge_modelCV.fit(X_train, Y_train)
-elapsed = time_measure("Ridge.fit()--RidgeCV.fit()", start, elapsed)
-
-
-#Evaluating Ridge model on dev data
-Y_dev_preds_ridge = ridge_model.predict(X_dev)
-Y_dev_preds_ridge = Y_dev_preds_ridge.reshape(-1, 1)
-print("RMSL error on dev set:", rmsle(Y_dev, Y_dev_preds_ridge))
-
-
-Y_dev_preds_ridgeCV = ridge_modelCV.predict(X_dev)
-Y_dev_preds_ridgeCV = Y_dev_preds_ridgeCV.reshape(-1, 1)
-print("CV RMSL error on dev set:", rmsle(Y_dev, Y_dev_preds_ridgeCV))
+print("Evaluating the model on validation data...")
+Y_dev_preds_cnn = cnn_model.predict(X_dev, batch_size=BATCH_SIZE)
+print(" RMSLE error:", rmsle(Y_dev, Y_dev_preds_cnn))
 
 
 #prediction for test data
-ridge_preds = ridge_model.predict(X_test)
-ridge_preds = np.expm1(ridge_preds)
-ridgeCV_preds = ridge_modelCV.predict(X_test)
-ridgeCV_preds = np.expm1(ridgeCV_preds)
+cnn_preds = cnn_model.predict(X_test, batch_size=BATCH_SIZE, verbose=RNN_VERBOSE)
+cnn_preds = np.expm1(cnn_preds)
+elapsed = time_measure("cnn_model.predict()", start, elapsed)
+
 
 
 #combine all predictions
-def aggregate_predicts3(Y1, Y2, Y3, ratio1, ratio2):
+def aggregate_predicts2(Y1, Y2, ratio1):
     assert Y1.shape == Y2.shape
-    return Y1 * ratio1 + Y2 * ratio2 + Y3 * (1.0 - ratio1-ratio2)
+    return Y1 * ratio1 + Y2 * (1.0 - ratio1)
 
 
 #ratio optimum finder for 3 models
 best1 = 0
-best2 = 0
 lowest = 0.99
-for i in range(100):
-    for j in range(100):
-        r = i*0.01
-        r2 = j*0.01
-        if r+r2 < 1.0:
-            Y_dev_preds = aggregate_predicts3(Y_dev_preds_rnn, Y_dev_preds_ridgeCV, Y_dev_preds_ridge, r, r2)
-            fpred = rmsle(Y_dev, Y_dev_preds)
-            if fpred < lowest:
-                best1 = r
-                best2 = r2
-                lowest = fpred
-Y_dev_preds = aggregate_predicts3(Y_dev_preds_rnn, Y_dev_preds_ridgeCV, Y_dev_preds_ridge, best1, best2)
-elapsed = time_measure("aggregate_predicts3() get best coefficients", start, elapsed)
+for i in range(101):
+    r = i*0.01
+    if r <= 1.0:
+        Y_dev_preds = aggregate_predicts2(Y_dev_preds_rnn, Y_dev_preds_cnn, r)
+        fpred = rmsle(Y_dev, Y_dev_preds)
+        if fpred < lowest:
+            best1 = r
+            lowest = fpred
+Y_dev_preds = aggregate_predicts2(Y_dev_preds_rnn, Y_dev_preds_cnn, best1)
+elapsed = time_measure("aggregate_predicts2() get best coefficients", start, elapsed)
 
 dev_best_rmsle = rmsle(Y_dev, Y_dev_preds)
 print("(Best) RMSL error for RNN + Ridge + RidgeCV on dev set:", dev_best_rmsle)
 
 
 # best predicted submission
-preds = aggregate_predicts3(rnn_preds, ridgeCV_preds, ridge_preds, best1, best2)
+preds = aggregate_predicts2(rnn_preds, cnn_preds, best1)
 submission = pd.DataFrame({"test_id": test_df.test_id, "price": preds.reshape(-1)}, columns=['test_id', 'price'])
 # submission.to_csv("./rnn_ridge_submission.csv", index=False)
-submission.to_csv("./best1_{}_best2_{}_DevBestRmsle_{:.5f}_.csv".format(best1,best2,dev_best_rmsle), index=False)
+submission.to_csv("./best1_{}_DevBestRmsle_{:.5f}_.csv".format(best1,dev_best_rmsle), index=False)
 print("completed time:")
 stop_real = datetime.now()
 execution_time_real = stop_real-start_real

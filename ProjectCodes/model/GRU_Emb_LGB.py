@@ -94,6 +94,13 @@ else:
     np.random.seed(123)
 
 
+def time_measure(section, start, elapsed):
+    lap = time.time() - start - elapsed
+    elapsed = time.time() - start
+    RECORD_LOG("{:60}: {:15.2f}[sec]{:15.2f}[sec]".format(section, lap, elapsed))
+    return elapsed
+
+
 class EmbLgbRegressor(BaseEstimator, RegressorMixin):
     """ An sklearn-API regressor.
     Model 1: Embedding GRU ---- Embedding(text or cat) -> Concat[GRU(words) or Flatten(cat_vector)] ->  Dense -> Output
@@ -267,6 +274,9 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         self.X_ = X
         self.y_ = y
 
+        start = time.time()
+        elapsed = 0
+
         # FITTING THE MODEL
         steps = int(X.shape[0] / self.batch_size) * self.epochs
         # final_lr=init_lr * (1/(1+decay))**(steps-1)
@@ -281,6 +291,7 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
 
         # print('~~~~~~~~~~~~In fit() type(X): {}'.format(type(X)))
         keras_X = self.data_reader.get_keras_dict_data(X)
+        elapsed = time_measure("data_reader.get_keras_dict_data(X)", start, elapsed)
         keras_fit_start = time.time()
         history = self.emb_GRU_model.fit(keras_X, y, epochs=self.epochs, batch_size=self.batch_size, validation_split=0., # 0.01
                                          # callbacks=[TensorBoard('./logs/'+log_subdir)],
@@ -288,6 +299,7 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         RECORD_LOG('[self.emb_GRU_model.fit] cost {:.4f}s'.format(time.time() - keras_fit_start))
         if LOCAL_FLAG:
             print('[self.emb_GRU_model.fit] cost {:.4f}s'.format(time.time() - keras_fit_start))
+        elapsed = time_measure("emb_GRU_model.fit(keras_X, y)", start, elapsed)
 
         if input_LGB_all_concat:
             lgb_X = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
@@ -299,7 +311,9 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
                                 'brand_le', 'name_len', 'desc_len']].values
             print("prepare lgb_X,", name_gru_encode.shape, item_desc_gru_encode.shape, other_le_feats.shape)
             lgb_X = np.hstack((name_gru_encode, item_desc_gru_encode, other_le_feats))
+        elapsed = time_measure("lgb_X: get_GRU_interlayer_out()", start, elapsed)
         self.lgb_model.fit(lgb_X, y)
+        elapsed = time_measure("lgb_model.fit()", start, elapsed)
 
         # Return the regressor
         return self
@@ -322,7 +336,11 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
         # Input validation
         # X = check_array(X)  # ValueError: setting an array element with a sequence. This is caused by "XXX_seq"
 
+        start = time.time()
+        elapsed = 0
+
         keras_X = self.data_reader.get_keras_dict_data(X)
+        elapsed = time_measure("Predict: data_reader.get_keras_dict_data(X)", start, elapsed)
 
         if input_LGB_all_concat:
             lgb_X = self.get_GRU_interlayer_out(trained_gru_model=self.emb_GRU_model, layer_name='concat_layer', input_data=keras_X)
@@ -333,8 +351,12 @@ class EmbLgbRegressor(BaseEstimator, RegressorMixin):
             other_le_feats = X[['brand_le', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le', 'item_condition_id', 'shipping']].values
             print("prepare lgb_X,", name_gru_encode.shape, item_desc_gru_encode.shape, other_le_feats.shape)
             lgb_X = np.hstack((name_gru_encode, item_desc_gru_encode, other_le_feats))
+        elapsed = time_measure("Predict: lgb_X = get_GRU_interlayer_out()", start, elapsed)
 
-        return self.lgb_model.predict(lgb_X)
+        pred_y = self.lgb_model.predict(lgb_X)
+        elapsed = time_measure("lgb_model.predict()", start, elapsed)
+
+        return pred_y
 
 
 class CvGridParams(object):
@@ -364,18 +386,18 @@ class CvGridParams(object):
                 'lr_init': [0.01485],  # np.geomspace(0.009, 0.02, 100),
                 'lr_final': [0.00056],  # np.geomspace(0.0001, 0.001, 100),
 
-                'lgb_num_leaves': [110, 200, 50],
-                'lgb_max_depth': [4, 6, 8],
+                'lgb_num_leaves': [110],
+                'lgb_max_depth': [8],
                 'lgb_learning_rate': [0.5, 0.25, 0.75],
-                'lgb_n_estimators': [3000, 1000, 500],
+                'lgb_n_estimators': [3000],
                 'lgb_min_split_gain': [0.0, 1.0],
-                'lgb_min_child_weight': [1e-3, 0.01],
+                'lgb_min_child_weight': [0.01],
                 'lgb_min_child_samples': [20, 200],
-                'lgb_subsample': [0.8, 0.6],
+                'lgb_subsample': [0.8],
                 'lgb_subsample_freq': [1, 10],
-                'lgb_colsample_bytree': [0.8, 0.6],
-                'lgb_reg_alpha': [0.0, 0.5, 1.0],
-                'lgb_reg_lambda': [0.0, 0.5, 1.0],
+                'lgb_colsample_bytree': [0.6],
+                'lgb_reg_alpha': [0.5],
+                'lgb_reg_lambda': [0.0],
                 'lgb_rand_state': [self.rand_state],
             }
         else:

@@ -39,7 +39,7 @@ np.random.seed(123)
 BN_FLAG = True
 USE_NAME_BRAND_MAP = True
 RNN_VERBOSE = 10
-SPEED_UP = False
+SPEED_UP = True
 if SPEED_UP:
     import pyximport
     pyximport.install()
@@ -461,7 +461,7 @@ def normalize_text(text):
     return text
 wb = wordbatch.WordBatch(normalize_text, extractor=(WordBag, {"hash_ngrams": 2, "hash_ngrams_weights": [1.5, 1.0],
                                                               "hash_size": 2 ** 22, "norm": None, "tf": 'binary',
-                                                              "idf": None,}), procs=8)
+                                                              "idf": None,}), procs=8, n_words=500000)
 wb.dictionary_freeze= True
 wb.fit(train_df['name'])
 X_name = wb.transform(full_df['name'])
@@ -480,7 +480,7 @@ elapsed = time_measure("X_category: Vectorize 'categories 0/1/2' completed.", st
 
 wb = wordbatch.WordBatch(normalize_text, extractor=(WordBag, {"hash_ngrams": 2, "hash_ngrams_weights": [1.0, 1.0],
                                                               "hash_size": 2 ** 22, "norm": "l2", "tf": 1.0,
-                                                              "idf": None}), procs=8)
+                                                              "idf": None}), procs=8, n_words=2000000)
 wb.dictionary_freeze= True
 wb.fit(train_df['item_description'])
 X_description = wb.transform(full_df['item_description'])

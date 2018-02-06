@@ -332,12 +332,12 @@ X_test = get_rnn_data(test)
 
 
 #our own loss function
-def root_mean_squared_logarithmic_error(y_true, y_pred):
-    first_log = K.log(K.clip(y_pred, K.epsilon(), None) + 1.)
-    second_log = K.log(K.clip(y_true, K.epsilon(), None) + 1.)
-    return K.sqrt(K.mean(K.square(first_log - second_log), axis=-1)+0.0000001)
-def root_mean_squared_error(y_true, y_pred):
-    return K.sqrt(K.mean(K.square(y_pred - y_true), axis=-1)+0.0000001)
+# def root_mean_squared_logarithmic_error(y_true, y_pred):
+#     first_log = K.log(K.clip(y_pred, K.epsilon(), None) + 1.)
+#     second_log = K.log(K.clip(y_true, K.epsilon(), None) + 1.)
+#     return K.sqrt(K.mean(K.square(first_log - second_log), axis=-1)+0.0000001)
+# def root_mean_squared_error(y_true, y_pred):
+#     return K.sqrt(K.mean(K.square(y_pred - y_true), axis=-1)+0.0000001)
 
 
 # build the model
@@ -495,7 +495,7 @@ del(lb)
 elapsed = time_measure("X_brand: Vectorize 'brand_name' completed. shape={}".format(X_brand.shape), start, elapsed)
 
 
-X_dummies = csr_matrix(pd.get_dummies(full_df[['item_condition_id', 'shipping']], sparse=True).values)
+X_dummies = csr_matrix(pd.get_dummies(full_df[['item_condition_id', 'shipping']].astype(str), sparse=True).values)
 elapsed = time_measure("X_dummies: Vectorize 'condition_id & shipping' completed. {}".format(X_dummies.shape), start, elapsed)
 
 

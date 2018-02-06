@@ -84,10 +84,10 @@ class CvGridParams(object):
             self.all_params = {
                 'solver': ['auto'],
                 'fit_intercept': [True],
-                'alpha': [4.75],  # np.linspace(0.01, 10, 100),
-                'max_iter': [100],
+                'alpha': [3.363],  # np.linspace(3.01, 10, 100)
+                'max_iter': [600],  # range(100, 1000, 100)
                 'normalize': [False],
-                'tol': [0.05],
+                'tol': [0.01],  # np.linspace(0.01, 1, 100)
                 'random_state': [self.rand_state],
             }
         else:
@@ -227,7 +227,7 @@ if __name__ == "__main__":
         else:
             reg = RandomizedSearchCV(estimator=regress_model,
                                      param_distributions=cv_grid_params.all_params,
-                                     n_iter=1,
+                                     n_iter=650,
                                      n_jobs=N_CORE,
                                      cv=KFold(n_splits=5, shuffle=True, random_state=cv_grid_params.rand_state),
                                      scoring=cv_grid_params.scoring,

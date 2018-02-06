@@ -81,16 +81,16 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'num_leaves': range(30, 300, 20),
-                'max_depth': range(3, 12),
-                'learning_rate': np.arange(0.1, 3, 0.2),
-                'n_estimators': range(100, 5000, 300),
-                'min_split_gain': np.arange(0.0, 1, 0.1),
-                'min_child_weight': [0.01], #  np.arange(0.001, 1, 0.05),
-                'min_child_samples': range(20, 100, 10),
-                'subsample': np.arange(0.5, 1.001, 0.1),
-                'subsample_freq': range(0, 100, 10),  # frequency for bagging
-                'colsample_bytree': np.arange(0.5, 1.001, 0.1),
+                'num_leaves': [150],  # range(30, 300, 20),
+                'max_depth': [3],  # range(3, 12),
+                'learning_rate': [0.1],  # np.arange(0.1, 3, 0.2),
+                'n_estimators': [2800],  # range(100, 5000, 300),
+                'min_split_gain': [0.9],  # np.arange(0.0, 1, 0.1),
+                'min_child_weight': [0.01],  # np.arange(0.001, 1, 0.05),
+                'min_child_samples': [80],  # range(20, 100, 10),
+                'subsample': [0.8],  # np.arange(0.5, 1.001, 0.1),
+                'subsample_freq': [80],  # range(0, 100, 10),  # frequency for bagging
+                'colsample_bytree': [0.6],  # np.arange(0.5, 1.001, 0.1),
                 'reg_alpha': [0.5],  # np.arange(0.0, 5.001, 0.5),
                 'reg_lambda': [0.0],  # np.arange(0.0, 5.001, 0.5),
                 'rand_state': [self.rand_state],
@@ -232,9 +232,9 @@ if __name__ == "__main__":
         else:
             reg = RandomizedSearchCV(estimator=regress_model,
                                      param_distributions=cv_grid_params.all_params,
-                                     n_iter=1,
+                                     n_iter=8,
                                      n_jobs=N_CORE,
-                                     cv=KFold(n_splits=5, shuffle=True, random_state=cv_grid_params.rand_state),
+                                     cv=KFold(n_splits=4, shuffle=True, random_state=cv_grid_params.rand_state),
                                      scoring=cv_grid_params.scoring,
                                      verbose=2,
                                      refit=True)

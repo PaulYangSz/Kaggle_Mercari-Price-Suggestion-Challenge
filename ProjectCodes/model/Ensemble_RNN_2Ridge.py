@@ -352,20 +352,20 @@ def new_rnn_model(lr=0.001, decay=0.0):
     subcat_2 = Input(shape=[1], name="subcat_2")
 
     # Embeddings layers (adjust outputs to help model)
-    emb_name = Embedding(MAX_NAME_DICT_WORDS, 20)(name)
-    emb_item_desc = Embedding(MAX_DESC_DICT_WORDS, 60)(item_desc)
-    emb_brand_name = Embedding(MAX_BRAND, 10)(brand_name)
-    emb_item_condition = Embedding(MAX_CONDITION, 5)(item_condition)
-    emb_desc_len = Embedding(MAX_DESC_LEN, 5)(desc_len)
-    emb_name_len = Embedding(MAX_NAME_LEN, 5)(name_len)
-    emb_desc_npc_cnt = Embedding(MAX_NPC_LEN, 5)(desc_npc_cnt)
-    emb_subcat_0 = Embedding(MAX_SUBCAT_0, 10)(subcat_0)
-    emb_subcat_1 = Embedding(MAX_SUBCAT_1, 10)(subcat_1)
-    emb_subcat_2 = Embedding(MAX_SUBCAT_2, 10)(subcat_2)
+    emb_name = Embedding(MAX_NAME_DICT_WORDS, 10)(name)
+    emb_item_desc = Embedding(MAX_DESC_DICT_WORDS, 50)(item_desc)
+    emb_brand_name = Embedding(MAX_BRAND, 7)(brand_name)
+    emb_item_condition = Embedding(MAX_CONDITION, 3)(item_condition)
+    emb_desc_len = Embedding(MAX_DESC_LEN, 3)(desc_len)
+    emb_name_len = Embedding(MAX_NAME_LEN, 3)(name_len)
+    emb_desc_npc_cnt = Embedding(MAX_NPC_LEN, 3)(desc_npc_cnt)
+    emb_subcat_0 = Embedding(MAX_SUBCAT_0, 7)(subcat_0)
+    emb_subcat_1 = Embedding(MAX_SUBCAT_1, 7)(subcat_1)
+    emb_subcat_2 = Embedding(MAX_SUBCAT_2, 7)(subcat_2)
 
     # rnn layers (GRUs are faster than LSTMs and speed is important here)
-    rnn_layer1 = GRU(16)(emb_item_desc)
-    rnn_layer2 = GRU(8)(emb_name)
+    rnn_layer1 = GRU(12)(emb_item_desc)
+    rnn_layer2 = GRU(6)(emb_name)
 
     # main layers
     main_layer = concatenate([
@@ -383,7 +383,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     ])
 
     # Concat[all] -> Dense1 -> ... -> DenseN
-    dense_layers_unit = [512, 256, 128, 64]
+    dense_layers_unit = [1024, 512, 256, 64]
     drop_out_layers = [0.1, 0.1, 0.1, 0.1]
     for i in range(len(dense_layers_unit)):
         main_layer = Dense(dense_layers_unit[i])(main_layer)
@@ -421,7 +421,7 @@ epochs = 2
 # Calculate learning rate decay
 exp_decay = lambda init, fin, steps: (init/fin)**(1/(steps-1)) - 1
 steps = int(len(X_train['name']) / BATCH_SIZE) * epochs
-lr_init, lr_fin = 0.01485, 0.00056
+lr_init, lr_fin = 0.00975, 0.0002
 lr_decay = exp_decay(lr_init, lr_fin, steps)
 
 # Create model and fit it with training dataset.

@@ -354,31 +354,31 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'name_emb_dim': [15],  # In name each word's vector length
-                'item_desc_emb_dim': [70],
+                'name_emb_dim': [10],  # In name each word's vector length
+                'item_desc_emb_dim': [50],
                 # 'cat_name_emb_dim': [20],
-                'brand_emb_dim': [10],
-                'cat_main_emb_dim': [10],
-                'cat_sub_emb_dim': [10],
-                'cat_sub2_emb_dim': [10],
-                'item_cond_id_emb_dim': [5],
-                'desc_len_dim': [5],
-                'name_len_dim': [5],
-                'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
+                'brand_emb_dim': [7],
+                'cat_main_emb_dim': [7],
+                'cat_sub_emb_dim': [7],
+                'cat_sub2_emb_dim': [7],
+                'item_cond_id_emb_dim': [3],
+                'desc_len_dim': [3],
+                'name_len_dim': [3],
+                'GRU_layers_out_dim': [(6, 12)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
                 'bn_flag': [True],  # Batch-Norm switch
                 'drop_out_layers': [(0.1, 0.1, 0.1, 0.1)],  # DNN parameters
                 'dense_layers_unit': [(512, 256, 128, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*3],
-                'lr_init': [0.01485],  # np.geomspace(0.009, 0.02, 100),
-                'lr_final': [0.00056],  # np.geomspace(0.0001, 0.001, 100),
+                'lr_init': [0.00975],  # np.geomspace(0.009, 0.02, 100),
+                'lr_final': [0.0002],  # np.geomspace(0.0001, 0.001, 100),
 
                 'ridge_solver': ['auto'],
                 'ridge_fit_intercept': [True],
-                'ridge_alpha': [4.75],
-                'ridge_max_iter': [100],
+                'ridge_alpha': np.linspace(0.01, 10, 1000),  # [4.75]
+                'ridge_max_iter': range(100, 1000, 100),  # [100, 300, 600]
                 'ridge_normalize': [False],
-                'ridge_tol': [0.05],
+                'ridge_tol': np.linspace(0.01, 1, 100),  # [0.05]
                 'ridge_rand_state': [self.rand_state],
             }
         else:

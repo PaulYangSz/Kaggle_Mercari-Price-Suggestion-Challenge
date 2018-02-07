@@ -315,23 +315,23 @@ class CvGridParams(object):
                 'item_desc_emb_dim': [50],
                 # 'cat_name_emb_dim': [20],
                 'brand_emb_dim': [10],
-                'cat_main_emb_dim': [10],
-                'cat_sub_emb_dim': [10],
-                'cat_sub2_emb_dim': [10],
-                'item_cond_id_emb_dim': [5],
+                'cat_main_emb_dim': [5],
+                'cat_sub_emb_dim': [7],
+                'cat_sub2_emb_dim': [9],
+                'item_cond_id_emb_dim': [3],
                 'desc_len_dim': [5],
-                'name_len_dim': [5],
+                'name_len_dim': [4],
                 'bn_flag': [True],  # Batch-Norm switch
-                'name_filter_size_list': [(3, 4)],  #[(2, 4), (2, 3), (3, 4)],  # CNN parameters
-                'name_num_filters_list': [(7, 7)],  #[(7, 7), (10, 10)],
-                'name_strides_list': [(2, 2)],  #[(1, 1), (2, 2)],
-                'name_pool_size_list': [(3, 3)],  #[(2, 2), (3, 3)],
-                'desc_filter_size_list': [(2, 3)],  #[(2, 4), (2, 3), (2, 6), (4, 6)],
-                'desc_num_filters_list': [(10, 10)],  #[(10, 10), (15, 15)],
-                'desc_strides_list': [(1, 1)],  #[(1, 1), (2, 2), (3, 3)],
-                'desc_pool_size_list': [(3, 3)],  #[(2, 2), (3, 3), (6, 6)],
-                'drop_out_layers': [(0.1, 0.1, 0.1, 0.1)],  # DNN parameters
-                'dense_layers_unit': [(512, 256, 128, 64)],
+                'name_filter_size_list': [(3, 4), (2, 3), (2, 5)],  #[(2, 4), (2, 3), (3, 4)],  # CNN parameters
+                'name_num_filters_list': [(7, 7), (14, 14), (28, 28)],  #[(7, 7), (10, 10)],
+                'name_strides_list': [(2, 2), (1, 1), (1, 2), (3, 3)],  #[(1, 1), (2, 2)],
+                'name_pool_size_list': [(3, 3), (2, 2), (4, 4)],  #[(2, 2), (3, 3)],
+                'desc_filter_size_list': [(2, 3), (2, 5), (3, 6), (4, 8)],  #[(2, 4), (2, 3), (2, 6), (4, 6)],
+                'desc_num_filters_list': [(10, 10), (20, 20), (30, 30)],  #[(10, 10), (15, 15)],
+                'desc_strides_list': [(1, 1), (2, 2), (4, 4)],  #[(1, 1), (2, 2), (3, 3)],
+                'desc_pool_size_list': [(3, 3), (6, 6), (9, 9)],  #[(2, 2), (3, 3), (6, 6)],
+                'drop_out_layers': [(0.1, 0.1, 0.1, 0.1), (0.15, 0.15, 0.15, 0.15), (0.2, 0.2, 0.2, 0.2)],  # DNN parameters
+                'dense_layers_unit': [(512, 256, 128, 64), (1024, 512, 256, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*3],
                 'lr_init': np.geomspace(0.006, 0.008, 100),  # [0.00705042933244],
@@ -380,9 +380,9 @@ def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_
     else:
         reg = RandomizedSearchCV(estimator=regress_model,
                                  param_distributions=cv_grid_params.all_params,
-                                 n_iter=24,
+                                 n_iter=27,
                                  n_jobs=N_CORE,
-                                 cv=KFold(n_splits=5, shuffle=True, random_state=cv_grid_params.rand_state),
+                                 cv=KFold(n_splits=4, shuffle=True, random_state=cv_grid_params.rand_state),
                                  scoring=cv_grid_params.scoring,
                                  verbose=2,
                                  refit=False)

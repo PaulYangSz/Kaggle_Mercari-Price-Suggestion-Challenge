@@ -79,7 +79,7 @@ del le
 nb_use_df['text'] = nb_use_df['name']  # .apply(construct_feature_text, axis=1)
 print('[{:.3f}] Get text finished.'.format(time.time() - start_time))
 
-dsample, dvalid = train_test_split(nb_use_df[['text', 'brand_le']], random_state=666, test_size=0.01)
+dsample, dvalid = train_test_split(nb_use_df[['text', 'brand_le']], random_state=666, test_size=0.8)
 print('dsample={}, dvalid={}'.format(dsample.shape, dvalid.shape))
 
 # vectorizer = TfidfVectorizer(decode_error='ignore', max_features=2 ** 18, token_pattern=r"\S+")  # ngram_range=(1, 1)

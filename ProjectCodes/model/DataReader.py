@@ -550,9 +550,10 @@ class DataReader():
         def cols_astype_to_str(dataset):
             dataset['shipping'] = dataset['shipping'].astype(str)
             dataset['item_condition_id'] = dataset['item_condition_id'].astype(str)
-            # dataset['desc_len'] = dataset['desc_len'].astype(str)
-            # dataset['name_len'] = dataset['name_len'].astype(str)
-            # dataset['desc_npc_cnt'] = dataset['desc_npc_cnt'].astype(str)
+            dataset['desc_len'] = dataset['desc_len'].astype(str)
+            dataset['name_len'] = dataset['name_len'].astype(str)
+            dataset['desc_npc_cnt'] = dataset['desc_npc_cnt'].astype(str)
+            dataset['desc_len_diff'] = dataset['desc_len_diff'].astype(str)
         cols_astype_to_str(self.train_df)
         cols_astype_to_str(self.test_df)
 
@@ -585,15 +586,18 @@ class DataReader():
             ('item_condition_id', CountVectorizer(
                 token_pattern='\d+',
                 preprocessor=build_preprocessor('item_condition_id'))),
-            # ('desc_len', CountVectorizer(
-            #     token_pattern='\d+',
-            #     preprocessor=build_preprocessor('desc_len'))),
-            # ('name_len', CountVectorizer(
-            #     token_pattern='\d+',
-            #     preprocessor=build_preprocessor('name_len'))),
-            # ('desc_npc_cnt', CountVectorizer(
-            #     token_pattern='\d+',
-            #     preprocessor=build_preprocessor('desc_npc_cnt'))),
+            ('desc_len', CountVectorizer(
+                token_pattern='\d+',
+                preprocessor=build_preprocessor('desc_len'))),
+            ('name_len', CountVectorizer(
+                token_pattern='\d+',
+                preprocessor=build_preprocessor('name_len'))),
+            ('desc_npc_cnt', CountVectorizer(
+                token_pattern='\d+',
+                preprocessor=build_preprocessor('desc_npc_cnt'))),
+            ('desc_len_diff', CountVectorizer(
+                token_pattern='\d+',
+                preprocessor=build_preprocessor('desc_len_diff'))),
             ('item_description', TfidfVectorizer(
                 token_pattern=r"(?u)\S+",
                 ngram_range=(1, 2),
@@ -604,13 +608,13 @@ class DataReader():
         feat_union.fit(self.train_df.drop('price', axis=1).values)
         record_log(self.local_flag, 'FeatureUnion fit() cost {}s'.format(time.time() - feat_union_start))
         sparse_train_X = feat_union.transform(self.train_df.drop('price', axis=1).values)
-        sparse_train_X = hstack((sparse_train_X, self.train_df[['desc_len', 'name_len', 'desc_npc_cnt']].values), format='csr')
+        # sparse_train_X = hstack((sparse_train_X, self.train_df[['desc_len', 'name_len', 'desc_npc_cnt']].values), format='csr')
         if 'target' in self.train_df.columns:
             train_y = self.train_df['target']
         else:
             train_y = np.log1p(self.train_df['price'])
         sparse_test_X = feat_union.transform(self.test_df.values)
-        sparse_test_X = hstack((sparse_test_X, self.test_df[['desc_len', 'name_len', 'desc_npc_cnt']].values), format='csr')
+        # sparse_test_X = hstack((sparse_test_X, self.test_df[['desc_len', 'name_len', 'desc_npc_cnt']].values), format='csr')
         record_log(self.local_flag, 'FeatureUnion fit&transform() cost {}s'.format(time.time() - feat_union_start))
 
         X_train, X_test, y_train, y_test = train_test_split(sparse_train_X, train_y, random_state=123, test_size=0.01)

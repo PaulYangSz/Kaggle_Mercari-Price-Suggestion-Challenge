@@ -107,7 +107,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
     """
 
     def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, cat_name_emb_dim=20, brand_emb_dim=10,
-                 cat_main_emb_dim=10, cat_sub_emb_dim=10, cat_sub2_emb_dim=10, item_cond_id_emb_dim=5, desc_len_dim=5, name_len_dim=5,
+                 cat_main_emb_dim=10, cat_sub_emb_dim=10, cat_sub2_emb_dim=10, item_cond_id_emb_dim=5, desc_len_dim=5, name_len_dim=5, npc_cnt_dim=5,
                  GRU_layers_out_dim=(8, 16), bn_flag=False, drop_out_layers=(0.25, 0.1), dense_layers_unit=(128, 64),
                  epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007):
         self.data_reader = data_reader
@@ -121,7 +121,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.item_cond_id_emb_dim = item_cond_id_emb_dim
         self.desc_len_dim = desc_len_dim
         self.name_len_dim = name_len_dim
-        self.npc_cnt_dim = desc_len_dim  # TODO: 需要设置下npc的维度
+        self.npc_cnt_dim = npc_cnt_dim
         self.GRU_layers_out_dim = GRU_layers_out_dim
         self.bn_flag = bn_flag
         assert len(drop_out_layers) == len(dense_layers_unit)
@@ -295,6 +295,7 @@ class CvGridParams(object):
                 'item_cond_id_emb_dim': [3],
                 'desc_len_dim': [3],
                 'name_len_dim': [3],
+                'npc_cnt_dim': [3],
                 'GRU_layers_out_dim': [(6, 12)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
                 'bn_flag': [True],  # Batch-Norm switch
                 'drop_out_layers': [(0.1, 0.1, 0.1, 0.1)],  # DNN parameters

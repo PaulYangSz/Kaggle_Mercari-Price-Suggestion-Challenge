@@ -449,7 +449,7 @@ class DataReader():
         record_log(self.local_flag, "\nLabelEncoder之后train_df的列有{}".format(self.train_df.columns))
         record_log(self.local_flag, "\nLabelEncoder之后test_df的列有{}".format(self.test_df.columns))
 
-    def tokenizer_text_col(self):
+    def tokenizer_text_col(self, len_2_bin_flag):
         """
         将文本列分词并转编码，构成编码list
         """
@@ -474,6 +474,27 @@ class DataReader():
         self.test_df['name_len'] = self.test_df['name_int_seq'].apply(len)
         self.train_df['desc_len'] = self.train_df['desc_int_seq'].apply(len)
         self.test_df['desc_len'] = self.test_df['desc_int_seq'].apply(len)
+
+        if len_2_bin_flag:
+            def len_2_bins(length, bins):
+                for i in range(len(bins)):
+                    if length <= bins[i]:
+                        return i
+                return len(bins)
+            # train_name_bins = list(range(1, self.train_df['name_len'].max()+4, 2))
+            train_name_bins = list(set(self.train_df['name_len'].quantile([q/1000 for q in range(1, 1001)]).values))
+            train_name_bins.sort()
+            self.train_df['name_len'] = self.train_df['name_len'].apply(lambda x: len_2_bins(x, train_name_bins))
+            self.test_df['name_len'] = self.test_df['name_len'].apply(lambda x: len_2_bins(x, train_name_bins))
+            # train_desc_bins = list(range(1, self.train_df['desc_len'].max()+5, 3))
+            train_desc_bins = list(set(self.train_df['desc_len'].quantile([q/1000 for q in range(1, 1001)]).values))
+            train_desc_bins.sort()
+            self.train_df['desc_len'] = self.train_df['desc_len'].apply(lambda x: len_2_bins(x, train_desc_bins))
+            self.test_df['desc_len'] = self.test_df['desc_len'].apply(lambda x: len_2_bins(x, train_desc_bins))
+            train_npc_bins = list(set(self.train_df['desc_npc_cnt'].quantile([q/1000 for q in range(1, 1001)]).values))
+            train_npc_bins.sort()
+            self.train_df['desc_npc_cnt'] = self.train_df['desc_npc_cnt'].map(lambda x: len_2_bins(x, train_npc_bins))
+            self.test_df['desc_npc_cnt'] = self.test_df['desc_npc_cnt'].map(lambda x: len_2_bins(x, train_npc_bins))
 
         del name_tok_raw, desc_tok_raw
 

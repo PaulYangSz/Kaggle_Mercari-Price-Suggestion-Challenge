@@ -278,30 +278,30 @@ elapsed = time_measure("tok_raw.texts_to_sequences(name & desc)", start, elapsed
 
 
 # 尝试下划分长度为类别
-def len_2_bins(length, bins):
-    for i in range(len(bins)):
-        if length <= bins[i]:
-            return i
-    return len(bins)
-train_name_bins = list(set(train_df['name_len'].quantile([q / 1000 for q in range(1, 1001)]).values))
-train_name_bins.sort()
-full_df['name_len'] = full_df['name_len'].apply(lambda x: len_2_bins(x, train_name_bins))
-train_df['name_len'] = full_df[:n_trains]['name_len']
-dev_df['name_len'] = full_df[n_trains:n_trains+n_devs]['name_len']
-test_df['name_len'] = full_df[n_trains+n_devs:]['name_len']
-# train_desc_bins = list(range(1, self.train_df['desc_len'].max()+5, 3))
-train_desc_bins = list(set(train_df['desc_len'].quantile([q / 1000 for q in range(1, 1001)]).values))
-train_desc_bins.sort()
-full_df['desc_len'] = full_df['desc_len'].apply(lambda x: len_2_bins(x, train_desc_bins))
-train_df['desc_len'] = full_df[:n_trains]['desc_len']
-dev_df['desc_len'] = full_df[n_trains:n_trains+n_devs]['desc_len']
-test_df['desc_len'] = full_df[n_trains+n_devs:]['desc_len']
-train_npc_bins = list(set(train_df['desc_npc_cnt'].quantile([q / 1000 for q in range(1, 1001)]).values))
-train_npc_bins.sort()
-full_df['desc_npc_cnt'] = full_df['desc_npc_cnt'].apply(lambda x: len_2_bins(x, train_npc_bins))
-train_df['desc_npc_cnt'] = full_df[:n_trains]['desc_npc_cnt']
-dev_df['desc_npc_cnt'] = full_df[n_trains:n_trains+n_devs]['desc_npc_cnt']
-test_df['desc_npc_cnt'] = full_df[n_trains+n_devs:]['desc_npc_cnt']
+# def len_2_bins(length, bins):
+#     for i in range(len(bins)):
+#         if length <= bins[i]:
+#             return i
+#     return len(bins)
+# train_name_bins = list(set(train_df['name_len'].quantile([q / 1000 for q in range(1, 1001)]).values))
+# train_name_bins.sort()
+# full_df['name_len'] = full_df['name_len'].apply(lambda x: len_2_bins(x, train_name_bins))
+# train_df['name_len'] = full_df[:n_trains]['name_len']
+# dev_df['name_len'] = full_df[n_trains:n_trains+n_devs]['name_len']
+# test_df['name_len'] = full_df[n_trains+n_devs:]['name_len']
+# # train_desc_bins = list(range(1, self.train_df['desc_len'].max()+5, 3))
+# train_desc_bins = list(set(train_df['desc_len'].quantile([q / 1000 for q in range(1, 1001)]).values))
+# train_desc_bins.sort()
+# full_df['desc_len'] = full_df['desc_len'].apply(lambda x: len_2_bins(x, train_desc_bins))
+# train_df['desc_len'] = full_df[:n_trains]['desc_len']
+# dev_df['desc_len'] = full_df[n_trains:n_trains+n_devs]['desc_len']
+# test_df['desc_len'] = full_df[n_trains+n_devs:]['desc_len']
+# train_npc_bins = list(set(train_df['desc_npc_cnt'].quantile([q / 1000 for q in range(1, 1001)]).values))
+# train_npc_bins.sort()
+# full_df['desc_npc_cnt'] = full_df['desc_npc_cnt'].apply(lambda x: len_2_bins(x, train_npc_bins))
+# train_df['desc_npc_cnt'] = full_df[:n_trains]['desc_npc_cnt']
+# dev_df['desc_npc_cnt'] = full_df[n_trains:n_trains+n_devs]['desc_npc_cnt']
+# test_df['desc_npc_cnt'] = full_df[n_trains+n_devs:]['desc_npc_cnt']
 
 
 #constants to use in RNN model
@@ -322,17 +322,28 @@ MAX_SUBCAT_2 = np.max(full_df.subcat_2.max()) + 1
 
 
 # 定义哪些列为dummy操作
-dummy_cols = []
-
+need_dummy_cols = ['item_condition_id', 'desc_len', 'name_len', 'desc_npc_cnt', 'subcat_0', 'subcat_1', 'subcat_2']
+def get_dummies(dummilize_cols):
+    print("Need dummilize cols are: {}".format(dummilize_cols))
+    dummy_df = pd.get_dummies(full_df[dummilize_cols].astype(str))
+    dummy_len = dummy_df.shape[1]
+    for i in range(dummy_len):
+        full_df['dummy_{}'.format(i)] = dummy_df.iloc[:, i]
+        # train_df['dummy_{}'.format(i)] = dummy_df.iloc[:train_df.shape[0], i]
+        # test_df['dummy_{}'.format(i)] = dummy_df.iloc[train_df.shape[0]:, i]
+    print("Dummy columns num={}".format(dummy_len))
+    return dummy_len
+dummy_len = get_dummies(need_dummy_cols) if len(need_dummy_cols) > 0 else 0
 
 #transform the data for RNN model
-def get_rnn_data(dataset):
+def get_rnn_data(dataset, dummy_len):
+    dummy_cols = ['dummy_{}'.format(i) for i in range(dummy_len)]
     X = {
         'name': pad_sequences(dataset.seq_name, maxlen=MAX_NAME_SEQ),
         'item_desc': pad_sequences(dataset.seq_item_description, maxlen=MAX_ITEM_DESC_SEQ),
         'brand_name': np.array(dataset.brand_name),
         'item_condition': np.array(dataset.item_condition_id),
-        'num_vars': np.array(dataset[["shipping"]]),
+        'num_vars': np.array(dataset[["shipping"]+dummy_cols]),
         'desc_len': np.array(dataset[["desc_len"]]),
         'name_len': np.array(dataset[["name_len"]]),
         'desc_npc_cnt': np.array(dataset[["desc_npc_cnt"]]),
@@ -346,13 +357,13 @@ train = full_df[:n_trains]
 dev = full_df[n_trains:n_trains+n_devs]
 test = full_df[n_trains+n_devs:]
 
-X_train = get_rnn_data(train)
+X_train = get_rnn_data(train, dummy_len)
 Y_train = train.target.values.reshape(-1, 1)
 
-X_dev = get_rnn_data(dev)
+X_dev = get_rnn_data(dev, dummy_len)
 Y_dev = dev.target.values.reshape(-1, 1)
 
-X_test = get_rnn_data(test)
+X_test = get_rnn_data(test, dummy_len)
 
 
 #our own loss function

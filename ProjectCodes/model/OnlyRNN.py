@@ -31,7 +31,7 @@ import logging.config
 import lightgbm as lgb
 
 np.random.seed(123)
-USE_GRID_SEARCH = False
+USE_GRID_SEARCH = True
 if platform.system() == 'Windows':
     N_CORE = 1
     LOCAL_FLAG = True
@@ -108,6 +108,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
 
     def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, cat_name_emb_dim=20, brand_emb_dim=10,
                  cat_main_emb_dim=10, cat_sub_emb_dim=10, cat_sub2_emb_dim=10, item_cond_id_emb_dim=5, desc_len_dim=5, name_len_dim=5, npc_cnt_dim=5,
+                 embed_initial='normal',
                  GRU_layers_out_dim=(8, 16), bn_flag=False, drop_out_layers=(0.25, 0.1), dense_layers_unit=(128, 64),
                  epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007):
         self.data_reader = data_reader
@@ -122,6 +123,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.desc_len_dim = desc_len_dim
         self.name_len_dim = name_len_dim
         self.npc_cnt_dim = npc_cnt_dim
+        self.embed_initial = embed_initial
         self.GRU_layers_out_dim = GRU_layers_out_dim
         self.bn_flag = bn_flag
         assert len(drop_out_layers) == len(dense_layers_unit)
@@ -157,10 +159,10 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         #  类似TF的embedding_lookup
         #  name.shape=[None, MAX_NAME_SEQ] -> emb_name.shape=[None, MAX_NAME_SEQ, output_dim]
         # todo: 是否name和item_desciption的Embedding要共用? (词向量输出的维度不一样不能共用)
-        emb_name = Embedding(input_dim=reader.n_name_dict_words, output_dim=self.name_emb_dim)(name)
-        emb_item_desc = Embedding(reader.n_desc_dict_words, self.item_desc_emb_dim)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
-        emb_cond_id = Embedding(reader.n_condition_id, self.item_cond_id_emb_dim)(item_condition)
-        emb_cat_main = Embedding(reader.n_cat_main, self.cat_main_emb_dim)(category_main)
+        emb_name = Embedding(input_dim=reader.n_name_dict_words, output_dim=self.name_emb_dim, embeddings_initializer='glorot_normal')(name)
+        emb_item_desc = Embedding(reader.n_desc_dict_words, self.item_desc_emb_dim, embeddings_initializer='glorot_normal')(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
+        emb_cond_id = Embedding(reader.n_condition_id, self.item_cond_id_emb_dim, embeddings_initializer='glorot_normal')(item_condition)
+        emb_cat_main = Embedding(reader.n_cat_main, self.cat_main_emb_dim, embeddings_initializer='glorot_normal')(category_main)
         emb_cat_sub = Embedding(reader.n_cat_sub, self.cat_sub_emb_dim)(category_sub)
         emb_cat_sub2 = Embedding(reader.n_cat_sub2, self.cat_sub2_emb_dim)(category_sub2)
         emb_brand = Embedding(reader.n_brand, self.brand_emb_dim)(brand)
@@ -296,6 +298,7 @@ class CvGridParams(object):
                 'desc_len_dim': [3],
                 'name_len_dim': [3],
                 'npc_cnt_dim': [3],
+                'embed_initial': ['glorot_normal'],#['uniform', 'lecun_uniform', 'lecun_normal', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform'],
                 'GRU_layers_out_dim': [(6, 12)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
                 'bn_flag': [True],  # Batch-Norm switch
                 'drop_out_layers': [(0.1, 0.1, 0.1, 0.1)],  # DNN parameters
@@ -456,7 +459,7 @@ if __name__ == "__main__":
     # PROCESS TEXT: RAW
     RECORD_LOG("Text to seq process...")
     RECORD_LOG("   Fitting tokenizer...")
-    data_reader.tokenizer_text_col()
+    data_reader.tokenizer_text_col(len_2_bin_flag=False)
     with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
         RECORD_LOG('\n{}'.format(data_reader.train_df.head(3)))
     RECORD_LOG('[{:.4f}s] Finished PROCESSING TEXT DATA...'.format(time.time() - start_time))

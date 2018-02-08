@@ -414,7 +414,6 @@ class DataReader():
 
         self.name_seq_len = 0
         self.item_desc_seq_len = 0
-        self.cat_name_seq_len = 0
         self.n_name_dict_words = 0
         self.n_desc_dict_words = 0
         self.n_cat_main = 0
@@ -454,11 +453,11 @@ class DataReader():
         将文本列分词并转编码，构成编码list
         """
         # 分割文本成词，然后将词转成编码(先分词，后编码, 编码从1开始)
-        name_tok_raw = Tokenizer(num_words=150000, filters='\t\n')
-        desc_tok_raw = Tokenizer(num_words=300000, filters='\t\n')
-        # 这里构成raw文本的时候没有加入test数据是因为就算test中有新出现的词也不会在后续训练中改变词向量
-        name_raw_text = np.hstack([self.train_df['name'].str.lower()])
-        desc_raw_text = np.hstack([self.train_df['item_description'].str.lower()])
+        name_tok_raw = Tokenizer(num_words=250000, filters='\t\n')
+        desc_tok_raw = Tokenizer(num_words=600000, filters='\t\n')
+        # 这里构成raw文本的时候没有加入test数据是因为就算test中有新出现的词也不会在后续训练中改变词向量, but in SEQ will change
+        name_raw_text = np.hstack([self.train_df['name'].str.lower(), self.test_df['name'].str.lower()])
+        desc_raw_text = np.hstack([self.train_df['item_description'].str.lower(), self.test_df['item_description'].str.lower()])
         name_tok_raw.fit_on_texts(name_raw_text)
         desc_tok_raw.fit_on_texts(desc_raw_text)
         self.n_name_dict_words = min(max(name_tok_raw.word_index.values()), name_tok_raw.num_words) + 2
@@ -516,7 +515,6 @@ class DataReader():
         # TODO: 序列长度参数可调
         self.name_seq_len = 10  # 最长17个词
         self.item_desc_seq_len = 75  # 最长269个词，90%在62个词以内
-        self.cat_name_seq_len = 8  # 最长8个词
         self.n_cat_main = np.max([self.train_df.cat_main_le.max(), self.test_df.cat_main_le.max()]) + 1  # LE编码后最大值+1
         self.n_cat_sub = np.max([self.train_df.cat_sub_le.max(), self.test_df.cat_sub_le.max()]) + 1
         self.n_cat_sub2 = np.max([self.train_df.cat_sub2_le.max(), self.test_df.cat_sub2_le.max()]) + 1

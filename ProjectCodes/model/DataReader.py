@@ -501,6 +501,17 @@ class DataReader():
         record_log(self.local_flag, "\ntexts_to_sequences之后train_df的列有{}".format(self.train_df.columns))
         record_log(self.local_flag, "\ntexts_to_sequences之后test_df的列有{}".format(self.test_df.columns))
 
+    def get_dummies(self, dummilize_cols):
+        record_log(self.local_flag, "Need dummilize cols are: {}".format(dummilize_cols))
+        all_need_dummy_df = pd.concat([self.train_df[dummilize_cols], self.test_df[dummilize_cols]]).reset_index(drop=True)
+        dummy_df = pd.get_dummies(all_need_dummy_df[dummilize_cols].astype(str))
+        dummy_len = dummy_df.shape[1]
+        record_log(self.local_flag, "Get_dummies output len={}".format(dummy_len))
+        for i in range(dummy_len):
+            self.train_df['dummy_{}'.format(i)] = dummy_df.iloc[:self.train_df.shape[0], i]
+            self.test_df['dummy_{}'.format(i)] = dummy_df.iloc[self.train_df.shape[0]:, i]
+        return dummy_len
+
     def ensure_fixed_value(self):
         # TODO: 序列长度参数可调
         self.name_seq_len = 10  # 最长17个词

@@ -382,7 +382,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
 
     # Concat[all] -> Dense1 -> ... -> DenseN
     dense_layers_unit = [1024, 512, 256, 64]
-    drop_out_layers = [0.1, 0.1, 0.1, 0.1]
+    drop_out_layers = [0.0, 0.0, 0.0, 0.0]
     for i in range(len(dense_layers_unit)):
         main_layer = Dense(dense_layers_unit[i])(main_layer)
         if BN_FLAG:
@@ -419,7 +419,7 @@ epochs = 2
 # Calculate learning rate decay
 exp_decay = lambda init, fin, steps: (init/fin)**(1/(steps-1)) - 1
 steps = int(len(X_train['name']) / BATCH_SIZE) * epochs
-lr_init, lr_fin = 0.00975, 0.0002
+lr_init, lr_fin = 0.00985, 0.00014
 lr_decay = exp_decay(lr_init, lr_fin, steps)
 
 # Create model and fit it with training dataset.
@@ -510,7 +510,7 @@ vectorizer = FeatureUnion([
         preprocessor=build_preprocessor('item_description'))),
 ])
 
-vectorizer.fit(full_df.values[:n_trains])
+vectorizer.fit(full_df.values)
 X = vectorizer.transform(full_df.values)
 elapsed = time_measure("Ridge--FeatureUnion()", start, elapsed)
 

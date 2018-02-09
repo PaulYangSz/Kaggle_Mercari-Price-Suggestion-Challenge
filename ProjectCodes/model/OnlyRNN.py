@@ -30,8 +30,10 @@ import logging
 import logging.config
 import lightgbm as lgb
 
+from ProjectCodes.model.Leave1Validation import leave_1_validation
+
 np.random.seed(123)
-USE_GRID_SEARCH = True
+PARAM_SEARCH_WAY = 2  # 0: GridSearch, 1: RandomizeSearch, 2: SelfNoCV
 if platform.system() == 'Windows':
     N_CORE = 1
     LOCAL_FLAG = True
@@ -301,12 +303,14 @@ class CvGridParams(object):
                 'embed_initial': ['glorot_normal'],#['uniform', 'lecun_uniform', 'lecun_normal', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform'],
                 'GRU_layers_out_dim': [(6, 12)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
                 'bn_flag': [True],  # Batch-Norm switch
-                'drop_out_layers': [(0.1, 0.1, 0.1, 0.1)],  # DNN parameters
+                'drop_out_layers': [(0.0, 0.0, 0.0, 0.0)],  # DNN parameters
                 'dense_layers_unit': [(1024, 512, 256, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*3],
-                'lr_init': [0.00975],  # np.geomspace(0.007, 0.01, 100)
-                'lr_final': [0.0002],  # np.geomspace(0.0001, 0.0008, 100)
+                'lr_init': [0.00985],
+                'lr_final': [0.000128],
+                # 'lr_init': np.geomspace(0.009, 0.01, 1000),  # [0.00985]
+                # 'lr_final': np.arange(0.000125, 0.000131, 0.000001),  # [0.000128]
             }
         else:
             print("Construct CvGridParams with error param_type: " + param_type)
@@ -340,7 +344,7 @@ def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_
     # Check the list of available parameters with `estimator.get_params().keys()`
     print("keys are:::: {}".format(regress_model.get_params().keys()))
 
-    if USE_GRID_SEARCH:
+    if PARAM_SEARCH_WAY == 0:
         reg = GridSearchCV(estimator=regress_model,
                            param_grid=cv_grid_params.all_params,
                            n_jobs=N_CORE,
@@ -348,10 +352,10 @@ def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_
                            scoring=cv_grid_params.scoring,
                            verbose=2,
                            refit=False)
-    else:
+    elif PARAM_SEARCH_WAY == 1:
         reg = RandomizedSearchCV(estimator=regress_model,
                                  param_distributions=cv_grid_params.all_params,
-                                 n_iter=36,
+                                 n_iter=3,
                                  n_jobs=N_CORE,
                                  cv=KFold(n_splits=5, shuffle=True, random_state=cv_grid_params.rand_state),
                                  scoring=cv_grid_params.scoring,
@@ -484,7 +488,7 @@ if __name__ == "__main__":
     cv_grid_params = CvGridParams()
     adjust_para_list = print_param(cv_grid_params)
 
-    if LOCAL_FLAG and len(adjust_para_list) > 0:
+    if LOCAL_FLAG and len(adjust_para_list) > 0 and PARAM_SEARCH_WAY < 2:
         print('==========Need GridCV')
         # 4. Use GridSearchCV to tuning model.
         regress_model = SelfLocalRegressor(data_reader=data_reader)
@@ -513,6 +517,14 @@ if __name__ == "__main__":
         submission["price"] = test_preds
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
+    elif LOCAL_FLAG and PARAM_SEARCH_WAY == 2:
+        print('==========Self Leave 1 Validation')
+        cv_grid_params.all_params['data_reader'] = [data_reader]
+        best_dict, result_df = leave_1_validation(model_class=SelfLocalRegressor, tuning_params=cv_grid_params.all_params,
+                                                  all_data_df=data_reader.train_df, n_valid=3, test_ratio=0.01, y_col='target', clf_or_reg='reg')
+        with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
+            RECORD_LOG("自定义多split验证集整体打分有：\n{}".format(result_df))
+            print(result_df)
     else:
         print('==========Only Fit')
         assert len(adjust_para_list) == 0

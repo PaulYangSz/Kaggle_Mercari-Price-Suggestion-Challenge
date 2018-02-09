@@ -97,7 +97,7 @@ def leave_1_validation(model_class, tuning_params, all_data_df, n_valid, test_ra
     start = time.time()
     elapsed = 0
     for i in range(len(tuning_param_values)):
-        print('~~~~~~~~~Now use params({}/{}) to train and scoring~~~~~~~~~~~'.format(i+1, len(tuning_param_values)))
+        print('\n\n~~~~~~~~~Now use params({}/{}) to train and scoring~~~~~~~~~~~'.format(i+1, len(tuning_param_values)))
         current_values = tuning_param_values[i]
         current_para_dict = dict()
         for key in tuning_params.keys():
@@ -127,7 +127,7 @@ def leave_1_validation(model_class, tuning_params, all_data_df, n_valid, test_ra
             if len(search_param_list) > 0:
                 result_df.loc["params_{}".format(i+1), search_param_list] = list(current_values)
             del ml_model
-            elapsed = time_measure("::::Once .fit() cost time::::", start, elapsed)
+            elapsed = time_measure("::::::::::::Once .fit() cost time::::::::::::", start, elapsed)
 
         # set [i, [mean_s1, ... , ]
         key_score = get_mean_score(result_df, i, scoring_cols, n_valid, key_score_col)
@@ -137,5 +137,5 @@ def leave_1_validation(model_class, tuning_params, all_data_df, n_valid, test_ra
 
     print('BestScore = {}'.format(best_key_score))
     pprint('Best Params = \n{}'.format(best_params_dict))
-    result_df = result_df.sort_values(by=['mean_'.format(key_score_col)], ascending=False)
+    result_df = result_df.sort_values(by=['mean_{}'.format(key_score_col)], ascending=False)
     return best_params_dict, result_df

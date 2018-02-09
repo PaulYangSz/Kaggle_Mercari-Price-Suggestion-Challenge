@@ -307,9 +307,9 @@ class CvGridParams(object):
                 'dense_layers_unit': [(1024, 512, 256, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*3],
-                'lr_init': [0.00985],
+                # 'lr_init': [0.00985],
                 'lr_final': [0.000128],
-                # 'lr_init': np.geomspace(0.009, 0.01, 1000),  # [0.00985]
+                'lr_init': [0.00985, 0.00975, 0.00995, 0.01005, 0.00965],  # np.geomspace(0.009, 0.01, 1000)
                 # 'lr_final': np.arange(0.000125, 0.000131, 0.000001),  # [0.000128]
             }
         else:
@@ -522,9 +522,18 @@ if __name__ == "__main__":
         cv_grid_params.all_params['data_reader'] = [data_reader]
         best_dict, result_df = leave_1_validation(model_class=SelfLocalRegressor, tuning_params=cv_grid_params.all_params,
                                                   all_data_df=data_reader.train_df, n_valid=3, test_ratio=0.01, y_col='target', clf_or_reg='reg')
+
+        str_time = time.strftime("%m-%d_%H_%M", time.localtime(time.time()))
+        def save_cv_result(file_):
+            base_dir = os.path.dirname(os.path.abspath(file_))
+            csv_dir = base_dir + '/cv_result'
+            if not os.path.exists(csv_dir):
+                os.makedirs(csv_dir)
+            return os.path.join(csv_dir, os.path.basename(file_).split('.py')[0] + '_tuning{}.csv'.format(str_time))
         with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
-            RECORD_LOG("自定义多split验证集整体打分有：\n{}".format(result_df))
+            RECORD_LOG('自定义多split验证集细节为：\n{}'.format(result_df))
             print(result_df)
+        result_df.to_csv(save_cv_result(__file__), index=False)
     else:
         print('==========Only Fit')
         assert len(adjust_para_list) == 0

@@ -419,7 +419,7 @@ epochs = 2
 # Calculate learning rate decay
 exp_decay = lambda init, fin, steps: (init/fin)**(1/(steps-1)) - 1
 steps = int(len(X_train['name']) / BATCH_SIZE) * epochs
-lr_init, lr_fin = 0.00985, 0.00014
+lr_init, lr_fin = 0.01005, 0.000128
 lr_decay = exp_decay(lr_init, lr_fin, steps)
 
 # Create model and fit it with training dataset.

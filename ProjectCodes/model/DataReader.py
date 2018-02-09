@@ -587,6 +587,7 @@ class DataReader():
         cols_astype_to_str(self.train_df)
         cols_astype_to_str(self.test_df)
 
+        merge_df = pd.concat([self.train_df, self.test_df]).reset_index(drop=True)[self.test_df.columns]
         default_preprocessor = CountVectorizer().build_preprocessor()
         def build_preprocessor(field):
             field_idx = list(self.test_df.columns).index(field)
@@ -635,7 +636,8 @@ class DataReader():
                 preprocessor=build_preprocessor('item_description'))),
         ])
         feat_union_start = time.time()
-        feat_union.fit(self.train_df.drop('price', axis=1).values)
+        feat_union.fit(merge_df.values)
+        # feat_union.fit(self.train_df.drop('price', axis=1).values)
         record_log(self.local_flag, 'FeatureUnion fit() cost {}s'.format(time.time() - feat_union_start))
         sparse_train_X = feat_union.transform(self.train_df.drop('price', axis=1).values)
         # sparse_train_X = hstack((sparse_train_X, self.train_df[['desc_len', 'name_len', 'desc_npc_cnt']].values), format='csr')

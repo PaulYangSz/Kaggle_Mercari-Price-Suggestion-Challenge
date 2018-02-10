@@ -135,6 +135,9 @@ def leave_1_validation(model_class, tuning_params, all_data_df, n_valid, test_ra
             best_key_score = key_score
             best_params_dict = current_para_dict
 
+        with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
+            print("Temporary look result_df:\n{}".format(result_df))
+
     print('BestScore = {}'.format(best_key_score))
     pprint('Best Params = \n{}'.format(best_params_dict))
     result_df = result_df.sort_values(by=['mean_{}'.format(key_score_col)], ascending=False)

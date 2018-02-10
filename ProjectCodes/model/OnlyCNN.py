@@ -29,8 +29,10 @@ import logging
 import logging.config
 import lightgbm as lgb
 
+from ProjectCodes.model.Leave1Validation import leave_1_validation
+
 np.random.seed(123)
-USE_GRID_SEARCH = False
+PARAM_SEARCH_WAY = 2  # 0: GridSearch, 1: RandomizeSearch, 2: SelfNoCV
 if platform.system() == 'Windows':
     N_CORE = 1
     LOCAL_FLAG = True
@@ -190,6 +192,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
                     conv = BatchNormalization()(conv)
                 conv = Activation(activation="relu")(conv)
                 # [Input] (samples_n, time_n, feat_n) -> [Output] (samples_n, down_time_n, feat_n)
+                print("conv.shape={}".format(conv.shape))
                 conv = MaxPooling1D(pool_size=pool_size_list[i])(conv)
                 conv = Flatten()(conv)
                 conv_blocks.append(conv)
@@ -322,20 +325,24 @@ class CvGridParams(object):
                 'desc_len_dim': [5],
                 'name_len_dim': [4],
                 'bn_flag': [True],  # Batch-Norm switch
-                'name_filter_size_list': [(3, 4), (2, 3), (2, 5)],  #[(2, 4), (2, 3), (3, 4)],  # CNN parameters
-                'name_num_filters_list': [(7, 7), (14, 14), (28, 28)],  #[(7, 7), (10, 10)],
-                'name_strides_list': [(2, 2), (1, 1), (1, 2), (3, 3)],  #[(1, 1), (2, 2)],
-                'name_pool_size_list': [(3, 3), (2, 2), (4, 4)],  #[(2, 2), (3, 3)],
-                'desc_filter_size_list': [(2, 3), (2, 5), (3, 6), (4, 8)],  #[(2, 4), (2, 3), (2, 6), (4, 6)],
-                'desc_num_filters_list': [(10, 10), (20, 20), (30, 30)],  #[(10, 10), (15, 15)],
-                'desc_strides_list': [(1, 1), (2, 2), (4, 4)],  #[(1, 1), (2, 2), (3, 3)],
-                'desc_pool_size_list': [(3, 3), (6, 6), (9, 9)],  #[(2, 2), (3, 3), (6, 6)],
-                'drop_out_layers': [(0.1, 0.1, 0.1, 0.1), (0.15, 0.15, 0.15, 0.15), (0.2, 0.2, 0.2, 0.2)],  # DNN parameters
-                'dense_layers_unit': [(512, 256, 128, 64), (1024, 512, 256, 64)],
+                'name_filter_size_list': [(3, 4)],  #[(2, 4), (2, 3), (3, 4)],  # CNN parameters
+                'name_num_filters_list': [(28, 28)],  #[(7, 7), (10, 10)],
+                'name_strides_list': [(1, 1)],  #[(1, 1), (2, 2)], (10 - FiltSize + 2Pad) / Strid + 1
+                'name_pool_size_list': [(2, 2)],  #[(2, 2), (10, 10)],
+
+                'desc_filter_size_list': [(2, 5)],  #[(2, 4), (2, 3), (2, 6), (4, 6)],
+                'desc_num_filters_list': [(20, 20), (18, 18), (22, 22), (16, 16), (24, 24)],  #[(10, 10), (15, 15)],
+                'desc_strides_list': [(1, 2)],  #[(1, 1), (2, 2), (3, 3)], (75 - FiltSize + 2Pad) / Strid + 1
+                'desc_pool_size_list': [(2, 2)],  #[(2, 2), (3, 3), (6, 6)],
+
+                'drop_out_layers': [(0.2, 0.2, 0.2, 0.2)],  # DNN parameters
+                'dense_layers_unit': [(512, 256, 128, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*3],
-                'lr_init': np.geomspace(0.006, 0.008, 100),  # [0.00705042933244],
-                'lr_final': np.geomspace(0.0002, 0.001, 100),  # [0.000317165257928]
+                'lr_init': [0.006322],
+                'lr_final': [0.000377],
+                # 'lr_init': np.geomspace(0.006, 0.008, 100),  # [0.00705042933244],
+                # 'lr_final': np.geomspace(0.0002, 0.001, 100),  # [0.000317165257928]
             }
         else:
             print("Construct CvGridParams with error param_type: " + param_type)
@@ -369,7 +376,7 @@ def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_
     # Check the list of available parameters with `estimator.get_params().keys()`
     print("keys are:::: {}".format(regress_model.get_params().keys()))
 
-    if USE_GRID_SEARCH:
+    if PARAM_SEARCH_WAY == 0:
         reg = GridSearchCV(estimator=regress_model,
                            param_grid=cv_grid_params.all_params,
                            n_jobs=N_CORE,
@@ -377,7 +384,7 @@ def train_model_with_gridsearch(regress_model:SelfLocalRegressor, sample_df, cv_
                            scoring=cv_grid_params.scoring,
                            verbose=2,
                            refit=False)
-    else:
+    elif PARAM_SEARCH_WAY == 1:
         reg = RandomizedSearchCV(estimator=regress_model,
                                  param_distributions=cv_grid_params.all_params,
                                  n_iter=27,
@@ -488,7 +495,7 @@ if __name__ == "__main__":
     # PROCESS TEXT: RAW
     RECORD_LOG("Text to seq process...")
     RECORD_LOG("   Fitting tokenizer...")
-    data_reader.tokenizer_text_col()
+    data_reader.tokenizer_text_col(len_2_bin_flag=False)
     with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
         RECORD_LOG('\n{}'.format(data_reader.train_df.head(3)))
     RECORD_LOG('[{:.4f}s] Finished PROCESSING TEXT DATA...'.format(time.time() - start_time))
@@ -513,7 +520,7 @@ if __name__ == "__main__":
     cv_grid_params = CvGridParams()
     adjust_para_list = print_param(cv_grid_params)
 
-    if LOCAL_FLAG and len(adjust_para_list) > 0:
+    if LOCAL_FLAG and len(adjust_para_list) > 0 and PARAM_SEARCH_WAY < 2:
         print('==========Need GridCV')
         # 4. Use GridSearchCV to tuning model.
         regress_model = SelfLocalRegressor(data_reader=data_reader)
@@ -542,6 +549,23 @@ if __name__ == "__main__":
         submission["price"] = test_preds
         submission.to_csv("./csv_output/self_regressor_r2score_{:.5f}.csv".format(validation_scores.loc["last_valida_df", "r2score"]), index=False)
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
+    elif LOCAL_FLAG and PARAM_SEARCH_WAY == 2:
+        print('==========Self Leave 1 Validation')
+        cv_grid_params.all_params['data_reader'] = [data_reader]
+        best_dict, result_df = leave_1_validation(model_class=SelfLocalRegressor, tuning_params=cv_grid_params.all_params,
+                                                  all_data_df=data_reader.train_df, n_valid=3, test_ratio=0.01, y_col='target', clf_or_reg='reg')
+
+        str_time = time.strftime("%m-%d_%H_%M", time.localtime(time.time()))
+        def save_cv_result(file_):
+            base_dir = os.path.dirname(os.path.abspath(file_))
+            csv_dir = base_dir + '/cv_result'
+            if not os.path.exists(csv_dir):
+                os.makedirs(csv_dir)
+            return os.path.join(csv_dir, os.path.basename(file_).split('.py')[0] + '_tuning{}.csv'.format(str_time))
+        with pd.option_context('display.max_rows', 100, 'display.max_columns', 100, 'display.width', 10000):
+            RECORD_LOG('自定义多split验证集细节为：\n{}'.format(result_df))
+            print(result_df)
+        result_df.to_csv(save_cv_result(__file__), index=False)
     else:
         print('==========Only Fit')
         assert len(adjust_para_list) == 0

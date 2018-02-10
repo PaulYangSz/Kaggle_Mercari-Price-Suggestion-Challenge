@@ -21,11 +21,11 @@ from sklearn.metrics import r2_score
 from sklearn.model_selection import GridSearchCV, KFold, RandomizedSearchCV
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from keras.layers import Input, Dropout, Dense, BatchNormalization, \
-    Activation, concatenate, GRU, Embedding, Flatten
+    Activation, concatenate, GRU, Embedding, Flatten, LSTM, CuDNNGRU, CuDNNLSTM
 from keras.models import Model
 from keras.callbacks import ModelCheckpoint, Callback, EarlyStopping#, TensorBoard
 from keras import backend as K
-from keras import optimizers
+from keras.optimizers import Adam, Adadelta, Adagrad, Adamax, RMSprop
 import logging
 import logging.config
 import lightgbm as lgb
@@ -110,7 +110,6 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
 
     def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, cat_name_emb_dim=20, brand_emb_dim=10,
                  cat_main_emb_dim=10, cat_sub_emb_dim=10, cat_sub2_emb_dim=10, item_cond_id_emb_dim=5, desc_len_dim=5, name_len_dim=5, npc_cnt_dim=5,
-                 embed_initial='normal',
                  GRU_layers_out_dim=(8, 16), bn_flag=False, drop_out_layers=(0.25, 0.1), dense_layers_unit=(128, 64),
                  epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007):
         self.data_reader = data_reader
@@ -125,7 +124,6 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.desc_len_dim = desc_len_dim
         self.name_len_dim = name_len_dim
         self.npc_cnt_dim = npc_cnt_dim
-        self.embed_initial = embed_initial
         self.GRU_layers_out_dim = GRU_layers_out_dim
         self.bn_flag = bn_flag
         assert len(drop_out_layers) == len(dense_layers_unit)
@@ -165,12 +163,12 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         emb_item_desc = Embedding(reader.n_desc_dict_words, self.item_desc_emb_dim, embeddings_initializer='glorot_normal')(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
         emb_cond_id = Embedding(reader.n_condition_id, self.item_cond_id_emb_dim, embeddings_initializer='glorot_normal')(item_condition)
         emb_cat_main = Embedding(reader.n_cat_main, self.cat_main_emb_dim, embeddings_initializer='glorot_normal')(category_main)
-        emb_cat_sub = Embedding(reader.n_cat_sub, self.cat_sub_emb_dim)(category_sub)
-        emb_cat_sub2 = Embedding(reader.n_cat_sub2, self.cat_sub2_emb_dim)(category_sub2)
-        emb_brand = Embedding(reader.n_brand, self.brand_emb_dim)(brand)
-        emb_desc_len = Embedding(reader.n_desc_max_len, self.desc_len_dim)(desc_len)
-        emb_name_len = Embedding(reader.n_name_max_len, self.name_len_dim)(name_len)
-        emb_desc_npc_cnt = Embedding(reader.n_npc_max_cnt, self.npc_cnt_dim)(desc_npc_cnt)
+        emb_cat_sub = Embedding(reader.n_cat_sub, self.cat_sub_emb_dim, embeddings_initializer='glorot_uniform')(category_sub)
+        emb_cat_sub2 = Embedding(reader.n_cat_sub2, self.cat_sub2_emb_dim, embeddings_initializer='glorot_uniform')(category_sub2)
+        emb_brand = Embedding(reader.n_brand, self.brand_emb_dim, embeddings_initializer='glorot_uniform')(brand)
+        emb_desc_len = Embedding(reader.n_desc_max_len, self.desc_len_dim, embeddings_initializer='glorot_normal')(desc_len)
+        emb_name_len = Embedding(reader.n_name_max_len, self.name_len_dim, embeddings_initializer='glorot_uniform')(name_len)
+        emb_desc_npc_cnt = Embedding(reader.n_npc_max_cnt, self.npc_cnt_dim, embeddings_initializer='glorot_uniform')(desc_npc_cnt)
 
         # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
         rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0])(emb_name)
@@ -207,7 +205,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
                               num_vars, desc_len, name_len, desc_npc_cnt],  # category_name
                       outputs=output)
         # optimizer = optimizers.RMSprop()
-        optimizer = optimizers.Adam(lr=0.001, decay=0.0)
+        optimizer = Adam(lr=0.001, decay=0.0)
         model.compile(loss="mse", optimizer=optimizer)
         return model
 
@@ -300,16 +298,16 @@ class CvGridParams(object):
                 'desc_len_dim': [3],
                 'name_len_dim': [3],
                 'npc_cnt_dim': [3],
-                'embed_initial': ['glorot_normal'],#['uniform', 'lecun_uniform', 'lecun_normal', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform'],
+                # 'embed_initial': ['glorot_normal'],#['uniform', 'lecun_uniform', 'lecun_normal', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform'],
                 'GRU_layers_out_dim': [(6, 12)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
                 'bn_flag': [True],  # Batch-Norm switch
                 'drop_out_layers': [(0.0, 0.0, 0.0, 0.0)],  # DNN parameters
                 'dense_layers_unit': [(1024, 512, 256, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*3],
-                # 'lr_init': [0.00985],
+                'lr_init': [0.01005],
                 'lr_final': [0.000128],
-                'lr_init': [0.00985, 0.00975, 0.00995, 0.01005, 0.00965],  # np.geomspace(0.009, 0.01, 1000)
+                # 'lr_init': [0.00985, 0.00975, 0.00995, 0.01005, 0.00965],  # np.geomspace(0.009, 0.01, 1000)
                 # 'lr_final': np.arange(0.000125, 0.000131, 0.000001),  # [0.000128]
             }
         else:

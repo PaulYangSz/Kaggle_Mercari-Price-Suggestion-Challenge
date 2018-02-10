@@ -2,6 +2,7 @@
 from pprint import pprint
 
 import pandas as pd
+import numpy as np
 from itertools import product
 
 import time
@@ -113,6 +114,10 @@ def leave_1_validation(model_class, tuning_params, all_data_df, n_valid, test_ra
     tuning_param_values = list(product(*[tuning_params[key] for key in search_param_list]))
     start = time.time()
     elapsed = 0
+    if n_valid == 1:
+        rand_state = [123]
+    else:
+        rand_state = np.random.randint(100, 100000000, n_valid)
     for i in range(len(tuning_param_values)):
         print('\n\n~~~~~~~~~Now use params({}/{}) to train and scoring~~~~~~~~~~~'.format(i+1, len(tuning_param_values)))
         current_values = tuning_param_values[i]
@@ -125,11 +130,7 @@ def leave_1_validation(model_class, tuning_params, all_data_df, n_valid, test_ra
         show_current_selec_param(current_para_dict, search_param_list)
 
         for i_valid in range(n_valid):
-            if n_valid == 1:
-                rand_state = 123
-            else:
-                rand_state = None
-            dsample, dvalid = train_test_split(all_data_df, test_size=test_ratio, random_state=rand_state)
+            dsample, dvalid = train_test_split(all_data_df, test_size=test_ratio, random_state=rand_state[i_valid])
             train_X = dsample.drop(y_col, axis=1)
             train_y = dsample[y_col].values
             valid_X = dvalid.drop(y_col, axis=1)
@@ -158,5 +159,5 @@ def leave_1_validation(model_class, tuning_params, all_data_df, n_valid, test_ra
 
     print('BestScore = {}'.format(best_key_score))
     pprint('Best Params = \n{}'.format(best_params_dict))
-    result_df = result_df.sort_values(by=['mean_{}'.format(key_score_col)], ascending=False)
+    result_df = result_df.sort_values(by=['mean({})'.format(key_score_col)], ascending=False)
     return best_params_dict, result_df

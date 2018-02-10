@@ -352,18 +352,18 @@ def new_rnn_model(lr=0.001, decay=0.0):
     # Embeddings layers (adjust outputs to help model)
     emb_name = Embedding(MAX_NAME_DICT_WORDS, 10, embeddings_initializer='glorot_normal')(name)
     emb_item_desc = Embedding(MAX_DESC_DICT_WORDS, 50, embeddings_initializer='glorot_normal')(item_desc)
-    emb_brand_name = Embedding(MAX_BRAND, 7)(brand_name)
     emb_item_condition = Embedding(MAX_CONDITION, 3, embeddings_initializer='glorot_normal')(item_condition)
-    emb_desc_len = Embedding(MAX_DESC_LEN, 3)(desc_len)
-    emb_name_len = Embedding(MAX_NAME_LEN, 3)(name_len)
-    emb_desc_npc_cnt = Embedding(MAX_NPC_LEN, 3)(desc_npc_cnt)
     emb_subcat_0 = Embedding(MAX_SUBCAT_0, 7, embeddings_initializer='glorot_normal')(subcat_0)
-    emb_subcat_1 = Embedding(MAX_SUBCAT_1, 7)(subcat_1)
-    emb_subcat_2 = Embedding(MAX_SUBCAT_2, 7)(subcat_2)
+    emb_subcat_1 = Embedding(MAX_SUBCAT_1, 7, embeddings_initializer='glorot_uniform')(subcat_1)
+    emb_subcat_2 = Embedding(MAX_SUBCAT_2, 7, embeddings_initializer='glorot_uniform')(subcat_2)
+    emb_brand_name = Embedding(MAX_BRAND, 7, embeddings_initializer='glorot_uniform')(brand_name)
+    emb_desc_len = Embedding(MAX_DESC_LEN, 3, embeddings_initializer='glorot_normal')(desc_len)
+    emb_name_len = Embedding(MAX_NAME_LEN, 3, embeddings_initializer='glorot_uniform')(name_len)
+    emb_desc_npc_cnt = Embedding(MAX_NPC_LEN, 3, embeddings_initializer='glorot_uniform')(desc_npc_cnt)
 
     # rnn layers (GRUs are faster than LSTMs and speed is important here)
-    rnn_layer1 = GRU(12)(emb_item_desc)
-    rnn_layer2 = GRU(6)(emb_name)
+    rnn_layer2 = GRU(6, kernel_initializer='glorot_normal', recurrent_initializer='glorot_uniform')(emb_name)
+    rnn_layer1 = GRU(12, kernel_initializer='glorot_normal', recurrent_initializer='glorot_normal')(emb_item_desc)
 
     # main layers
     main_layer = concatenate([

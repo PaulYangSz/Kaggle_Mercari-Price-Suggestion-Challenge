@@ -194,7 +194,7 @@ if __name__ == "__main__":
     data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
     RECORD_LOG('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
-    data_reader.tokenizer_text_col()  # For desc_word_len, name_word_len and desc_npc_cnt
+    data_reader.tokenizer_text_col(len_2_bin_flag=False)  # For desc_word_len, name_word_len and desc_npc_cnt
     data_reader.del_redundant_cols()
 
     # FIT FEATURES TRANSFORMERS

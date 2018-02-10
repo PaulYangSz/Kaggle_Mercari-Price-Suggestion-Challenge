@@ -17,10 +17,12 @@ def time_measure(section, start, elapsed):
 
 
 def make_all_scoring_cols(scoring_cols, n_valid):
-    mean_cols = ["mean_{}".format(scoring) for scoring in scoring_cols]
+    mean_cols = ["mean({})".format(scoring) for scoring in scoring_cols]
     all_cols = []
     for scoring in scoring_cols:
-        all_cols.extend([scoring+"_{}".format(i+1) for i in range(n_valid)])
+        all_cols.extend(["test({})".format(scoring)+"_{}".format(i+1) for i in range(n_valid)])
+    for scoring in scoring_cols:
+        all_cols.extend(["train({})".format(scoring)+"_{}".format(i+1) for i in range(n_valid)])
     return mean_cols, all_cols
 
 
@@ -28,25 +30,40 @@ def score_validation(ml_model, valid_X, valid_y, clf_or_reg, result_df, i, i_val
     index = 'params_{}'.format(i+1)
     pred_y = ml_model.predict(valid_X)
     if clf_or_reg == 'clf_2':
-        result_df.loc[index, "accuracy_{}".format(i_valid+1)] = accuracy_score(y_true=valid_y, y_pred=pred_y)
-        result_df.loc[index, "f1_{}".format(i_valid+1)] = f1_score(y_true=valid_y, y_pred=pred_y)
+        result_df.loc[index, "test(accuracy)_{}".format(i_valid+1)] = accuracy_score(y_true=valid_y, y_pred=pred_y)
+        result_df.loc[index, "test(f1)_{}".format(i_valid+1)] = f1_score(y_true=valid_y, y_pred=pred_y)
     elif clf_or_reg == 'clf_n':
-        result_df.loc[index, "accuracy_{}".format(i_valid+1)] = accuracy_score(y_true=valid_y, y_pred=pred_y)
-        result_df.loc[index, "f1_macro_{}".format(i_valid+1)] = f1_score(y_true=valid_y, y_pred=pred_y, average='macro')
-        result_df.loc[index, "f1_weighted_{}".format(i_valid+1)] = f1_score(y_true=valid_y, y_pred=pred_y, average='weighted')
+        result_df.loc[index, "test(accuracy)_{}".format(i_valid+1)] = accuracy_score(y_true=valid_y, y_pred=pred_y)
+        result_df.loc[index, "test(f1_macro)_{}".format(i_valid+1)] = f1_score(y_true=valid_y, y_pred=pred_y, average='macro')
+        result_df.loc[index, "test(f1_weighted)_{}".format(i_valid+1)] = f1_score(y_true=valid_y, y_pred=pred_y, average='weighted')
     else:
-        result_df.loc[index, "mean_squared_{}".format(i_valid+1)] = mean_squared_error(y_true=valid_y, y_pred=pred_y)
-        result_df.loc[index, "r2_{}".format(i_valid+1)] = r2_score(y_true=valid_y, y_pred=pred_y)
+        result_df.loc[index, "test(mean_squared)_{}".format(i_valid+1)] = mean_squared_error(y_true=valid_y, y_pred=pred_y)
+        result_df.loc[index, "test(r2)_{}".format(i_valid+1)] = r2_score(y_true=valid_y, y_pred=pred_y)
+
+
+def score_train(ml_model, train_X, train_y, clf_or_reg, result_df, i, i_valid):
+    index = 'params_{}'.format(i+1)
+    pred_y = ml_model.predict(train_X)
+    if clf_or_reg == 'clf_2':
+        result_df.loc[index, "train(accuracy)_{}".format(i_valid+1)] = accuracy_score(y_true=train_y, y_pred=pred_y)
+        result_df.loc[index, "train(f1)_{}".format(i_valid+1)] = f1_score(y_true=train_y, y_pred=pred_y)
+    elif clf_or_reg == 'clf_n':
+        result_df.loc[index, "train(accuracy)_{}".format(i_valid+1)] = accuracy_score(y_true=train_y, y_pred=pred_y)
+        result_df.loc[index, "train(f1_macro)_{}".format(i_valid+1)] = f1_score(y_true=train_y, y_pred=pred_y, average='macro')
+        result_df.loc[index, "train(f1_weighted)_{}".format(i_valid+1)] = f1_score(y_true=train_y, y_pred=pred_y, average='weighted')
+    else:
+        result_df.loc[index, "train(mean_squared)_{}".format(i_valid+1)] = mean_squared_error(y_true=train_y, y_pred=pred_y)
+        result_df.loc[index, "train(r2)_{}".format(i_valid+1)] = r2_score(y_true=train_y, y_pred=pred_y)
 
 
 def get_mean_score(result_df, i, cols_score, n_valid, key_score_col):
     index = 'params_{}'.format(i+1)
     key_score = -99999.0
     for score in cols_score:
-        extend_score_cols = [score+"_{}".format(i+1) for i in range(n_valid)]
-        result_df.loc[index, 'mean_{}'.format(score)] = result_df.loc[index, extend_score_cols].mean()
+        extend_score_cols = ["test({})".format(score)+"_{}".format(i+1) for i in range(n_valid)]
+        result_df.loc[index, 'mean({})'.format(score)] = result_df.loc[index, extend_score_cols].mean()
         if score == key_score_col:
-            key_score = result_df.loc[index, 'mean_{}'.format(score)]
+            key_score = result_df.loc[index, 'mean({})'.format(score)]
     return key_score
 
 
@@ -120,6 +137,7 @@ def leave_1_validation(model_class, tuning_params, all_data_df, n_valid, test_ra
 
             ml_model = model_class(**current_para_dict)
             ml_model.fit(train_X, train_y)
+            score_train(ml_model, train_X, train_y, clf_or_reg, result_df, i, i_valid)
 
             # Use Trained model to predict the validation dataset
             # set [i, [v_i_s1, ... ,]]

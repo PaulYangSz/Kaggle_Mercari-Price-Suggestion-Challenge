@@ -325,17 +325,17 @@ class CvGridParams(object):
                 'desc_len_dim': [5],
                 'name_len_dim': [4],
                 'bn_flag': [True],  # Batch-Norm switch
-                'name_filter_size_list': [(3, 4)],  #[(2, 4), (2, 3), (3, 4)],  # CNN parameters
-                'name_num_filters_list': [(28, 28)],  #[(7, 7), (10, 10)],
+                'name_filter_size_list': [(2, 3)],  #[(2, 4), (2, 3), (3, 4)],  # CNN parameters
+                'name_num_filters_list': [(25, 25)],  #[(7, 7), (10, 10)],
                 'name_strides_list': [(1, 1)],  #[(1, 1), (2, 2)], (10 - FiltSize + 2Pad) / Strid + 1
-                'name_pool_size_list': [(2, 2)],  #[(2, 2), (10, 10)],
+                'name_pool_size_list': [(3, 2)],  #[(2, 2), (10, 10)],
 
                 'desc_filter_size_list': [(2, 5)],  #[(2, 4), (2, 3), (2, 6), (4, 6)],
-                'desc_num_filters_list': [(20, 20), (18, 18), (22, 22), (16, 16), (24, 24)],  #[(10, 10), (15, 15)],
+                'desc_num_filters_list': [(22, 22)],  #[(10, 10), (15, 15)],
                 'desc_strides_list': [(1, 2)],  #[(1, 1), (2, 2), (3, 3)], (75 - FiltSize + 2Pad) / Strid + 1
                 'desc_pool_size_list': [(2, 2)],  #[(2, 2), (3, 3), (6, 6)],
 
-                'drop_out_layers': [(0.2, 0.2, 0.2, 0.2)],  # DNN parameters
+                'drop_out_layers': [(0.3, 0.3, 0.3, 0.3)],  # DNN parameters
                 'dense_layers_unit': [(512, 256, 128, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*3],

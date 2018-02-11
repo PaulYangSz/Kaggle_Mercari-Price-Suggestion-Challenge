@@ -362,8 +362,8 @@ def new_rnn_model(lr=0.001, decay=0.0):
     emb_desc_npc_cnt = Embedding(MAX_NPC_LEN, 3, embeddings_initializer='glorot_uniform')(desc_npc_cnt)
 
     # rnn layers (GRUs are faster than LSTMs and speed is important here)
-    rnn_layer2 = CuDNNGRU(6, kernel_initializer='glorot_normal', recurrent_initializer='glorot_uniform')(emb_name)
-    rnn_layer1 = CuDNNGRU(12, kernel_initializer='glorot_normal', recurrent_initializer='glorot_normal')(emb_item_desc)
+    rnn_layer2 = GRU(6, kernel_initializer='glorot_normal', recurrent_initializer='glorot_uniform')(emb_name)
+    rnn_layer1 = GRU(12, kernel_initializer='glorot_normal', recurrent_initializer='glorot_normal')(emb_item_desc)
 
     # main layers
     main_layer = concatenate([
@@ -413,13 +413,13 @@ del model
 #Fit RNN model to train data
 
 # Set hyper parameters for the model
-BATCH_SIZE = 512 * 3
+BATCH_SIZE = 256*5
 epochs = 3
 
 # Calculate learning rate decay
 exp_decay = lambda init, fin, steps: (init/fin)**(1/(steps-1)) - 1
 steps = int(len(X_train['name']) / BATCH_SIZE) * epochs
-lr_init, lr_fin = 0.01005, 0.000128
+lr_init, lr_fin = 0.00985, 0.000148
 lr_decay = exp_decay(lr_init, lr_fin, steps)
 
 # Create model and fit it with training dataset.

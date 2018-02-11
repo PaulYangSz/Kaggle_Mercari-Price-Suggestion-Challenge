@@ -75,7 +75,7 @@ if LOCAL_FLAG:
 
 RECORD_LOG = lambda log_str: record_log(LOCAL_FLAG, log_str)
 
-SPEED_UP = False
+SPEED_UP = True
 if SPEED_UP:
     import pyximport
     pyximport.install()
@@ -303,10 +303,10 @@ class CvGridParams(object):
                 'bn_flag': [True],  # Batch-Norm switch
                 'drop_out_layers': [(0.0, 0.0, 0.0, 0.0)],  # DNN parameters
                 'dense_layers_unit': [(1024, 512, 256, 64)],
-                'epochs': [2],  # LR parameters
-                'batch_size': [512*3],
-                'lr_init': [0.01005],
-                'lr_final': [0.000128],
+                'epochs': [3],  # LR parameters
+                'batch_size': [256*5],
+                'lr_init': [0.00985, 0.00975],
+                'lr_final': [0.000148, 0.000158],
                 # 'lr_init': [0.00985, 0.00975, 0.00995, 0.01005, 0.00965],  # np.geomspace(0.009, 0.01, 1000)
                 # 'lr_final': np.arange(0.000125, 0.000131, 0.000001),  # [0.000128]
             }

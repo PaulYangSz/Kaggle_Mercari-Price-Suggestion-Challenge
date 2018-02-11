@@ -388,8 +388,8 @@ def new_rnn_model(lr=0.001, decay=0.0):
         return Concatenate()(conv_blocks) if len(conv_blocks) > 1 else conv_blocks[0]
     cnn_layer_name = cnn_layer_output(filter_size_list=[2, 3], num_filters_list=[25, 25], strides_list=[1, 1],
                                       pool_size_list=[3, 2], emb_words=emb_name)
-    cnn_layer_item_desc = cnn_layer_output(filter_size_list=[2, 3, 4, 5], num_filters_list=[22, 22, 22, 22], strides_list=[1, 2, 3, 4],
-                                           pool_size_list=[2, 2, 2, 2], emb_words=emb_item_desc)
+    cnn_layer_item_desc = cnn_layer_output(filter_size_list=[2, 5], num_filters_list=[22, 22], strides_list=[1, 2],
+                                           pool_size_list=[2, 2], emb_words=emb_item_desc)
 
     # main layers
     main_layer = concatenate([

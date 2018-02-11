@@ -413,7 +413,7 @@ del model
 #Fit RNN model to train data
 
 # Set hyper parameters for the model
-BATCH_SIZE = 256*5
+BATCH_SIZE = 512*3
 epochs = 3
 
 # Calculate learning rate decay
@@ -583,7 +583,8 @@ print("(Best) RMSL error for RNN + Ridge + RidgeCV on dev set:", dev_best_rmsle)
 preds = aggregate_predicts3(rnn_preds, ridgeCV_preds, ridge_preds, best1, best2)
 submission = pd.DataFrame({"test_id": test_df.test_id, "price": preds.reshape(-1)}, columns=['test_id', 'price'])
 # submission.to_csv("./rnn_ridge_submission.csv", index=False)
-submission.to_csv("./best1_{}_best2_{}_DevBestRmsle_{:.5f}_.csv".format(best1,best2,dev_best_rmsle), index=False)
+print("best1={}, best2={}, dev_best_rmsle={}".format(best1,best2,dev_best_rmsle))
+submission.to_csv("./RNN3epoch_2R.csv", index=False)
 print("completed time:")
 stop_real = datetime.now()
 execution_time_real = stop_real-start_real

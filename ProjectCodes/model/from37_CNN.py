@@ -18,7 +18,7 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
-from keras.layers import Input, Dropout, Dense, concatenate, GRU, Embedding, Flatten, Activation, BatchNormalization, CuDNNGRU
+from keras.layers import Input, Dropout, Dense, concatenate, Embedding, Flatten, Activation, BatchNormalization, Conv1D, MaxPooling1D, Concatenate
 from keras.optimizers import Adam
 from keras.models import Model
 from keras import backend as K
@@ -32,7 +32,7 @@ np.random.seed(123)
 BN_FLAG = True
 USE_NAME_BRAND_MAP = True
 RNN_VERBOSE = 10
-SPEED_UP = True
+SPEED_UP = False
 if SPEED_UP:
     import pyximport
     pyximport.install()
@@ -350,20 +350,46 @@ def new_rnn_model(lr=0.001, decay=0.0):
     subcat_2 = Input(shape=[1], name="subcat_2")
 
     # Embeddings layers (adjust outputs to help model)
-    emb_name = Embedding(MAX_NAME_DICT_WORDS, 10, embeddings_initializer='glorot_normal')(name)
+    emb_name = Embedding(MAX_NAME_DICT_WORDS, 15, embeddings_initializer='glorot_normal')(name)
     emb_item_desc = Embedding(MAX_DESC_DICT_WORDS, 50, embeddings_initializer='glorot_normal')(item_desc)
     emb_item_condition = Embedding(MAX_CONDITION, 3, embeddings_initializer='glorot_normal')(item_condition)
-    emb_subcat_0 = Embedding(MAX_SUBCAT_0, 7, embeddings_initializer='glorot_normal')(subcat_0)
+    emb_subcat_0 = Embedding(MAX_SUBCAT_0, 5, embeddings_initializer='glorot_normal')(subcat_0)
     emb_subcat_1 = Embedding(MAX_SUBCAT_1, 7, embeddings_initializer='glorot_uniform')(subcat_1)
-    emb_subcat_2 = Embedding(MAX_SUBCAT_2, 7, embeddings_initializer='glorot_uniform')(subcat_2)
-    emb_brand_name = Embedding(MAX_BRAND, 7, embeddings_initializer='glorot_uniform')(brand_name)
-    emb_desc_len = Embedding(MAX_DESC_LEN, 3, embeddings_initializer='glorot_normal')(desc_len)
-    emb_name_len = Embedding(MAX_NAME_LEN, 3, embeddings_initializer='glorot_uniform')(name_len)
-    emb_desc_npc_cnt = Embedding(MAX_NPC_LEN, 3, embeddings_initializer='glorot_uniform')(desc_npc_cnt)
+    emb_subcat_2 = Embedding(MAX_SUBCAT_2, 9, embeddings_initializer='glorot_uniform')(subcat_2)
+    emb_brand_name = Embedding(MAX_BRAND, 10, embeddings_initializer='glorot_uniform')(brand_name)
+    emb_desc_len = Embedding(MAX_DESC_LEN, 5, embeddings_initializer='glorot_normal')(desc_len)
+    emb_name_len = Embedding(MAX_NAME_LEN, 4, embeddings_initializer='glorot_uniform')(name_len)
+    emb_desc_npc_cnt = Embedding(MAX_NPC_LEN, 5, embeddings_initializer='glorot_uniform')(desc_npc_cnt)
 
-    # rnn layers (GRUs are faster than LSTMs and speed is important here)
-    rnn_layer2 = CuDNNGRU(6, kernel_initializer='glorot_normal', recurrent_initializer='glorot_uniform')(emb_name)
-    rnn_layer1 = CuDNNGRU(12, kernel_initializer='glorot_normal', recurrent_initializer='glorot_normal')(emb_item_desc)
+    # CNN: Use Conv1D and MaxPooling1D(or GlobalMaxPooling1D)
+    def cnn_layer_output(filter_size_list, num_filters_list, strides_list, pool_size_list, emb_words):
+        conv_blocks = []
+        assert len(filter_size_list) == len(num_filters_list) and len(num_filters_list) == len(strides_list)
+        for i in range(len(filter_size_list)):
+            # [Input] (samples_n, time_n, dim) -> [Output] (samples_n, new_time_n, filter_n)
+            conv = Conv1D(filters=num_filters_list[i],
+                          kernel_size=filter_size_list[i],
+                          padding="valid",
+                          strides=strides_list[i])(emb_words)
+            if BN_FLAG:
+                conv = BatchNormalization()(conv)
+            conv_act = Activation(activation="relu")(conv)
+            if isinstance(pool_size_list[i], tuple):
+                for j in range(len(pool_size_list[i])):
+                    # [Input] (samples_n, time_n, feat_n) -> [Output] (samples_n, down_time_n, feat_n)
+                    conv_pool = MaxPooling1D(pool_size=pool_size_list[i][j])(conv_act)
+                    conv_pool = Flatten()(conv_pool)
+                    conv_blocks.append(conv_pool)
+            else:
+                # [Input] (samples_n, time_n, feat_n) -> [Output] (samples_n, down_time_n, feat_n)
+                conv_pool = MaxPooling1D(pool_size=pool_size_list[i])(conv_act)
+                conv_pool = Flatten()(conv_pool)
+                conv_blocks.append(conv_pool)
+        return Concatenate()(conv_blocks) if len(conv_blocks) > 1 else conv_blocks[0]
+    cnn_layer_name = cnn_layer_output(filter_size_list=[2, 3], num_filters_list=[25, 25], strides_list=[1, 1],
+                                      pool_size_list=[3, 2], emb_words=emb_name)
+    cnn_layer_item_desc = cnn_layer_output(filter_size_list=[2, 3, 4, 5], num_filters_list=[22, 22, 22, 22], strides_list=[1, 2, 3, 4],
+                                           pool_size_list=[2, 2, 2, 2], emb_words=emb_item_desc)
 
     # main layers
     main_layer = concatenate([
@@ -375,14 +401,14 @@ def new_rnn_model(lr=0.001, decay=0.0):
         Flatten()(emb_subcat_0),
         Flatten()(emb_subcat_1),
         Flatten()(emb_subcat_2),
-        rnn_layer1,
-        rnn_layer2,
+        cnn_layer_name,
+        cnn_layer_item_desc,
         num_vars,
     ])
 
     # Concat[all] -> Dense1 -> ... -> DenseN
-    dense_layers_unit = [1024, 512, 256, 64]
-    drop_out_layers = [0.0, 0.0, 0.0, 0.0]
+    dense_layers_unit = [512, 256, 128, 64]
+    drop_out_layers = [0.3, 0.3, 0.3, 0.3]
     for i in range(len(dense_layers_unit)):
         main_layer = Dense(dense_layers_unit[i])(main_layer)
         if BN_FLAG:
@@ -414,12 +440,12 @@ del model
 
 # Set hyper parameters for the model
 BATCH_SIZE = 512 * 3
-epochs = 3
+epochs = 2
 
 # Calculate learning rate decay
 exp_decay = lambda init, fin, steps: (init/fin)**(1/(steps-1)) - 1
 steps = int(len(X_train['name']) / BATCH_SIZE) * epochs
-lr_init, lr_fin = 0.01005, 0.000128
+lr_init, lr_fin = 0.006322, 0.000377
 lr_decay = exp_decay(lr_init, lr_fin, steps)
 
 # Create model and fit it with training dataset.

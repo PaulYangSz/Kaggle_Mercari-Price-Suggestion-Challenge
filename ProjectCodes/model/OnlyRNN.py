@@ -108,7 +108,8 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         The labels passed during :meth:`fit`
     """
 
-    def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, brand_emb_dim=10, category_emb_dim=10, npc_cnt_dim=5,
+    def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, brand_emb_dim=10, category_emb_dim=10,
+                 desc_len_dim=7, npc_cnt_dim=7,
                  GRU_layers_out_dim=(8, 16), bn_flag=False, drop_out_layers=(0.25, 0.1), dense_layers_unit=(128, 64),
                  epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007):
         self.data_reader = data_reader
@@ -116,6 +117,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.item_desc_emb_dim = item_desc_emb_dim
         self.brand_emb_dim = brand_emb_dim
         self.category_emb_dim = category_emb_dim
+        self.desc_len_dim = desc_len_dim
         self.npc_cnt_dim = npc_cnt_dim
         self.GRU_layers_out_dim = GRU_layers_out_dim
         self.bn_flag = bn_flag
@@ -142,17 +144,19 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         category = Input(shape=[1], name="category")
         brand = Input(shape=[1], name="brand")
         num_vars = Input(shape=[1], name="num_vars")
+        desc_len = Input(shape=[1], name="desc_len")
         desc_npc_cnt = Input(shape=[1], name="desc_npc_cnt")
 
         # Embedding的作用是配置字典size和词向量len后，根据call参数的indices，返回词向量.
         #  类似TF的embedding_lookup
         #  name.shape=[None, MAX_NAME_SEQ] -> emb_name.shape=[None, MAX_NAME_SEQ, output_dim]
         # todo: 是否name和item_desciption的Embedding要共用? (词向量输出的维度不一样不能共用)
-        emb_name = Embedding(input_dim=reader.n_name_dict_words, output_dim=self.name_emb_dim, embeddings_initializer='glorot_normal')(name)
-        emb_item_desc = Embedding(reader.n_desc_dict_words, self.item_desc_emb_dim, embeddings_initializer='glorot_normal')(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
-        emb_category = Embedding(reader.n_category, self.category_emb_dim, embeddings_initializer='glorot_normal')(category)
-        emb_brand = Embedding(reader.n_brand, self.brand_emb_dim, embeddings_initializer='glorot_uniform')(brand)
-        emb_desc_npc_cnt = Embedding(reader.n_npc_max_cnt, self.npc_cnt_dim, embeddings_initializer='glorot_uniform')(desc_npc_cnt)
+        emb_name = Embedding(input_dim=reader.n_name_dict_words, output_dim=self.name_emb_dim)(name)
+        emb_item_desc = Embedding(reader.n_desc_dict_words, self.item_desc_emb_dim)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
+        emb_category = Embedding(reader.n_category, self.category_emb_dim)(category)
+        emb_brand = Embedding(reader.n_brand, self.brand_emb_dim)(brand)
+        emb_desc_len = Embedding(reader.n_desc_max_len, self.desc_len_dim)(desc_len)
+        emb_desc_npc_cnt = Embedding(reader.n_npc_max_cnt, self.npc_cnt_dim)(desc_npc_cnt)
 
         # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
         rnn_layer_name = GRU(units=self.GRU_layers_out_dim[0])(emb_name)
@@ -163,6 +167,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         # 连接列表中的Tensor，按照axis组成一个大的Tensor
         main_layer = concatenate([Flatten()(emb_brand),  # [None, 1, 10] -> [None, 10]
                                   Flatten()(emb_category),
+                                  Flatten()(emb_desc_len),
                                   Flatten()(emb_desc_npc_cnt),
                                   item_condition,
                                   rnn_layer_name,
@@ -173,14 +178,14 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
             main_layer = Dense(self.dense_layers_unit[i])(main_layer)
             if self.bn_flag:
                 main_layer = BatchNormalization()(main_layer)
-            main_layer = Activation(activation='relu')(main_layer)
+            main_layer = Activation(activation='elu')(main_layer)
             main_layer = Dropout(self.drop_out_layers[i])(main_layer)
 
         # output
         output = Dense(1, activation="linear")(main_layer)
 
         # model
-        model = Model(inputs=[name, item_desc, brand, category, item_condition, num_vars, desc_npc_cnt],
+        model = Model(inputs=[name, item_desc, brand, category, item_condition, num_vars, desc_len, desc_npc_cnt],
                       outputs=output)
         # optimizer = optimizers.RMSprop()
         optimizer = Adam(lr=0.001, decay=0.0)
@@ -265,20 +270,21 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'name_emb_dim': [10],  # In name each word's vector length
-                'item_desc_emb_dim': [50],
+                'name_emb_dim': [20],  # In name each word's vector length
+                'item_desc_emb_dim': [60],
                 'category_emb_dim': [10],
-                'brand_emb_dim': [7],
-                'npc_cnt_dim': [3],
+                'brand_emb_dim': [10],
+                'desc_len_dim': [7],
+                'npc_cnt_dim': [7],
                 # 'embed_initial': ['glorot_normal'],#['uniform', 'lecun_uniform', 'lecun_normal', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform'],
-                'GRU_layers_out_dim': [(6, 12)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
-                'bn_flag': [True],  # Batch-Norm switch
-                'drop_out_layers': [(0.0, 0.0, 0.0, 0.0)],  # DNN parameters
-                'dense_layers_unit': [(1024, 512, 256, 64)],
+                'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
+                'bn_flag': [False],  # Batch-Norm switch
+                'drop_out_layers': [(0.0, 0.0, 0.0)],  # DNN parameters
+                'dense_layers_unit': [(256, 128, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*2],
-                'lr_init': [0.00985],
-                'lr_final': [0.000148],
+                'lr_init': [0.007], # 0.00985],
+                'lr_final': [0.0005], # 0.000148],
                 # 'lr_init': [0.00985, 0.00975, 0.00995, 0.01005, 0.00965],  # np.geomspace(0.009, 0.01, 1000)
                 # 'lr_final': np.arange(0.000125, 0.000131, 0.000001),  # [0.000128]
             }
@@ -418,7 +424,7 @@ if __name__ == "__main__":
     # cat_fill_type= "fill_paulnull" or "base_name" or "base_brand"
     # brand_fill_type= "fill_paulnull" or "base_other_cols" or "base_NB" or "base_GRU"
     # item_desc_fill_type= 'fill_' or 'fill_paulnull' or 'base_name'
-    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_paulnull', brand_fill_type='base_other_cols', item_desc_fill_type='fill_')
+    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_Other', brand_fill_type='fill_missing', item_desc_fill_type='fill_None')
     RECORD_LOG('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
     data_reader.del_redundant_cols()
@@ -489,6 +495,9 @@ if __name__ == "__main__":
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
     elif LOCAL_FLAG and PARAM_SEARCH_WAY == 2:
         print('==========Self Leave 1 Validation')
+        rnn_model = SelfLocalRegressor.get_GRU_model(data_reader)
+        rnn_model.summary(print_fn=RECORD_LOG)
+        del rnn_model
         cv_grid_params.all_params['data_reader'] = [data_reader]
         best_dict, result_df = leave_1_validation(model_class=SelfLocalRegressor, tuning_params=cv_grid_params.all_params,
                                                   all_data_df=data_reader.train_df, n_valid=3, test_ratio=0.01, y_col='target', clf_or_reg='reg')

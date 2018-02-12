@@ -108,19 +108,15 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         The labels passed during :meth:`fit`
     """
 
-    def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, cat_name_emb_dim=20, brand_emb_dim=10,
-                 cat_main_emb_dim=10, cat_sub_emb_dim=10, cat_sub2_emb_dim=10, item_cond_id_emb_dim=5, desc_len_dim=5, name_len_dim=5, npc_cnt_dim=5,
+    def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, brand_emb_dim=10,
+                 category_emb_dim=10, desc_len_dim=5, name_len_dim=5, npc_cnt_dim=5,
                  GRU_layers_out_dim=(8, 16), bn_flag=False, drop_out_layers=(0.25, 0.1), dense_layers_unit=(128, 64),
                  epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007):
         self.data_reader = data_reader
         self.name_emb_dim = name_emb_dim
         self.item_desc_emb_dim = item_desc_emb_dim
-        self.cat_name_emb_dim = cat_name_emb_dim
         self.brand_emb_dim = brand_emb_dim
-        self.cat_main_emb_dim = cat_main_emb_dim
-        self.cat_sub_emb_dim = cat_sub_emb_dim
-        self.cat_sub2_emb_dim = cat_sub2_emb_dim
-        self.item_cond_id_emb_dim = item_cond_id_emb_dim
+        self.category_emb_dim = category_emb_dim
         self.desc_len_dim = desc_len_dim
         self.name_len_dim = name_len_dim
         self.npc_cnt_dim = npc_cnt_dim
@@ -146,9 +142,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         name = Input(shape=[reader.name_seq_len], name="name")
         item_desc = Input(shape=[reader.item_desc_seq_len], name="item_desc")
         item_condition = Input(shape=[1], name="item_condition")
-        category_main = Input(shape=[1], name="category_main")
-        category_sub = Input(shape=[1], name="category_sub")
-        category_sub2 = Input(shape=[1], name="category_sub2")
+        category_name = Input(shape=[1], name="category_name")
         brand = Input(shape=[1], name="brand")
         num_vars = Input(shape=[1], name="num_vars")
         desc_len = Input(shape=[1], name="desc_len")
@@ -161,10 +155,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         # todo: 是否name和item_desciption的Embedding要共用? (词向量输出的维度不一样不能共用)
         emb_name = Embedding(input_dim=reader.n_name_dict_words, output_dim=self.name_emb_dim, embeddings_initializer='glorot_normal')(name)
         emb_item_desc = Embedding(reader.n_desc_dict_words, self.item_desc_emb_dim, embeddings_initializer='glorot_normal')(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
-        emb_cond_id = Embedding(reader.n_condition_id, self.item_cond_id_emb_dim, embeddings_initializer='glorot_normal')(item_condition)
-        emb_cat_main = Embedding(reader.n_cat_main, self.cat_main_emb_dim, embeddings_initializer='glorot_normal')(category_main)
-        emb_cat_sub = Embedding(reader.n_cat_sub, self.cat_sub_emb_dim, embeddings_initializer='glorot_uniform')(category_sub)
-        emb_cat_sub2 = Embedding(reader.n_cat_sub2, self.cat_sub2_emb_dim, embeddings_initializer='glorot_uniform')(category_sub2)
+        emb_category = Embedding(reader.n_cat_main, self.category_emb_dim, embeddings_initializer='glorot_normal')(category_name)
         emb_brand = Embedding(reader.n_brand, self.brand_emb_dim, embeddings_initializer='glorot_uniform')(brand)
         emb_desc_len = Embedding(reader.n_desc_max_len, self.desc_len_dim, embeddings_initializer='glorot_normal')(desc_len)
         emb_name_len = Embedding(reader.n_name_max_len, self.name_len_dim, embeddings_initializer='glorot_uniform')(name_len)
@@ -178,13 +169,11 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         # main layer
         # 连接列表中的Tensor，按照axis组成一个大的Tensor
         main_layer = concatenate([Flatten()(emb_brand),  # [None, 1, 10] -> [None, 10]
-                                  Flatten()(emb_cat_main),
-                                  Flatten()(emb_cat_sub),
-                                  Flatten()(emb_cat_sub2),
-                                  Flatten()(emb_cond_id),
+                                  Flatten()(emb_category),
                                   Flatten()(emb_desc_len),
                                   Flatten()(emb_name_len),
                                   Flatten()(emb_desc_npc_cnt),
+                                  item_condition,
                                   rnn_layer_name,
                                   rnn_layer_item_desc,
                                   # rnn_layer_cat_name,
@@ -201,7 +190,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         output = Dense(1, activation="linear")(main_layer)
 
         # model
-        model = Model(inputs=[name, item_desc, brand, category_main, category_sub, category_sub2, item_condition,
+        model = Model(inputs=[name, item_desc, brand, category_name, item_condition,
                               num_vars, desc_len, name_len, desc_npc_cnt],  # category_name
                       outputs=output)
         # optimizer = optimizers.RMSprop()
@@ -289,12 +278,8 @@ class CvGridParams(object):
             self.all_params = {
                 'name_emb_dim': [10],  # In name each word's vector length
                 'item_desc_emb_dim': [50],
-                # 'cat_name_emb_dim': [20],
+                'category_emb_dim': [10],
                 'brand_emb_dim': [7],
-                'cat_main_emb_dim': [7],
-                'cat_sub_emb_dim': [7],
-                'cat_sub2_emb_dim': [7],
-                'item_cond_id_emb_dim': [3],
                 'desc_len_dim': [3],
                 'name_len_dim': [3],
                 'npc_cnt_dim': [3],

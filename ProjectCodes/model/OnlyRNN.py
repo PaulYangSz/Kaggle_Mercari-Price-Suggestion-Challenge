@@ -495,9 +495,6 @@ if __name__ == "__main__":
         RECORD_LOG('[{:.4f}s] Finished submission...'.format(time.time() - start_time))
     elif LOCAL_FLAG and PARAM_SEARCH_WAY == 2:
         print('==========Self Leave 1 Validation')
-        rnn_model = SelfLocalRegressor.get_GRU_model(data_reader)
-        rnn_model.summary(print_fn=RECORD_LOG)
-        del rnn_model
         cv_grid_params.all_params['data_reader'] = [data_reader]
         best_dict, result_df = leave_1_validation(model_class=SelfLocalRegressor, tuning_params=cv_grid_params.all_params,
                                                   all_data_df=data_reader.train_df, n_valid=3, test_ratio=0.01, y_col='target', clf_or_reg='reg')

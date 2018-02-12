@@ -20,9 +20,13 @@ def rmsle(Y, Y_pred):
     assert Y.shape == Y_pred.shape
     return np.sqrt(np.mean(np.square(Y_pred - Y )))
 
-train_df = pd.read_table('../../input/train.tsv', engine='python')
-test_df = pd.read_table('../../input/test.tsv', engine='python')
+train_df = pd.read_table('../input/train.tsv')
+test_df = pd.read_table('../input/test.tsv')
 print(train_df.shape, test_df.shape)
+
+
+# drop price < 3
+train_df = train_df[train_df['price'] >= 3]
 
 
 def fill_missing_values(df):
@@ -270,6 +274,7 @@ print("RMSL error for RNN + Ridge on dev set:", rmsle(Y_dev, Y_dev_preds))
 
 
 preds = aggregate_predicts(rnn_preds, ridge_preds)
+preds[preds < 3] = 3
 submission = pd.DataFrame({
         "test_id": test_df.test_id,
         "price": preds.reshape(-1),

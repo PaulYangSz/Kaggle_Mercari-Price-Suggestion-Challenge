@@ -81,10 +81,10 @@ class DataReader():
 
         record_log(local_flag, 'Remain price!=0 items')
         train_df = train_df[train_df['price'] != 0]
-        record_log(local_flag, 'drop_duplicates()')
-        train_df_no_id = train_df.drop("train_id", axis=1)
-        train_df_no_id = train_df_no_id.drop_duplicates()
-        train_df = train_df.loc[train_df_no_id.index]
+        # record_log(local_flag, 'drop_duplicates()')
+        # train_df_no_id = train_df.drop("train_id", axis=1)
+        # train_df_no_id = train_df_no_id.drop_duplicates()
+        # train_df = train_df.loc[train_df_no_id.index]
 
         stopwords_list = stopwords.words('english')
         # stop_patten = re.compile(r'\b(' + r'|'.join(stopwords.words('english')) + r')\b\s*')
@@ -115,9 +115,9 @@ class DataReader():
         if item_desc_fill_type == 'fill_':
             train_df.loc[:, 'item_description'] = train_df['item_description'].map(lambda x: fill_item_description_null(x, ''))
             test_df.loc[:, 'item_description'] = test_df['item_description'].map(lambda x: fill_item_description_null(x, ''))
-        elif item_desc_fill_type == 'fill_paulnull':
-            train_df.loc[:, 'item_description'] = train_df['item_description'].map(lambda x: fill_item_description_null(x, 'paulnull'))
-            test_df.loc[:, 'item_description'] = test_df['item_description'].map(lambda x: fill_item_description_null(x, 'paulnull'))
+        elif item_desc_fill_type == 'fill_None':
+            train_df['item_description'].fillna(value="None", inplace=True)
+            test_df['item_description'].fillna(value="None", inplace=True)
         elif item_desc_fill_type == 'base_name':
             train_df.loc[:, 'item_description'] = train_df[['item_description', 'name']].apply(lambda x: fill_item_description_null(x.iloc[0], x.iloc[1]), axis=1)
             test_df.loc[:, 'item_description'] = test_df[['item_description', 'name']].apply(lambda x: fill_item_description_null(x.iloc[0], x.iloc[1]), axis=1)
@@ -133,8 +133,8 @@ class DataReader():
             except:
                 return ''
 
-        train_df.loc[:, 'name'] = train_df['name'].map(normal_name)
-        test_df.loc[:, 'name'] = test_df['name'].map(normal_name)
+        # train_df.loc[:, 'name'] = train_df['name'].map(normal_name)
+        # test_df.loc[:, 'name'] = test_df['name'].map(normal_name)
 
 
         # 统计下description中特殊字符的个数
@@ -150,102 +150,18 @@ class DataReader():
 
 
         # [先把能补充确定的brand填充上，然后再find brand]
-        if brand_fill_type == 'fill_paulnull':
-            train_df['brand_name'].fillna(value="paulnull", inplace=True)
-            test_df['brand_name'].fillna(value="paulnull", inplace=True)
-        elif brand_fill_type == 'base_other_cols':
-            def do_col2brand_dict(data_df: pd.DataFrame, key_col: str):
-                group_by_key_to_brandset_ser = data_df['brand_name'].groupby(data_df[key_col]).apply(
-                    lambda x: set(x.values))
-                only_one_brand_ser = group_by_key_to_brandset_ser[group_by_key_to_brandset_ser.map(len) == 1]
-                return only_one_brand_ser.map(lambda x: x.pop()).to_dict()
-
-            def get_brand_by_key(key, map):
-                if key in map:
-                    return map[key]
-                else:
-                    return 'paulnull'
-
-            col_key = 'name'
-            brand_start_time = time.time()
-            all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
-            have_brand_df = all_df[~all_df['brand_name'].isnull()].copy()
-            train_brand_null_index = train_df[train_df['brand_name'].isnull()].index
-            test_brand_null_index = test_df[test_df['brand_name'].isnull()].index
-            key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
-            train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
-            test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
-            n_before = train_brand_null_index.size + test_brand_null_index.size
-            n_after = (train_df['brand_name']=='paulnull').sum() + (test_df['brand_name']=='paulnull').sum()
-            record_log(local_flag, '直接name -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
-            record_log(local_flag, '填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
-
-            # handling brand_name
-            all_brands = set(have_brand_df['brand_name'].values)
-            premissing = len(train_df.loc[train_df['brand_name'] == 'paulnull'])
-
-            def brandfinder(line):
-                """
-                如果name含有brand信息，那么就用name代替brand
-                :param line:
-                :return:
-                """
-                brand = line[0]
-                name = line[1]
-                namesplit = name.split(' ')
-                # TODO: 考虑下不管brand是否存在，都用name替换
-                if brand == 'paulnull':
-                    for x in namesplit:
-                        if x in all_brands:
-                            return name
-                if name in all_brands:
-                    return name
-                return brand
-            train_df['brand_name'] = train_df[['brand_name', 'name']].apply(brandfinder, axis=1)
-            test_df['brand_name'] = test_df[['brand_name', 'name']].apply(brandfinder, axis=1)
-            found = premissing - len(train_df.loc[train_df['brand_name'] == 'paulnull'])
-            record_log(local_flag, 'On train dataset brandfinder() fill: {}'.format(found))
-
-            # col_key = 'item_description'
-            # brand_start_time = time.time()
-            # all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
-            # have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
-            # train_brand_null_index = train_df[train_df['brand_name']=='paulnull'].index
-            # test_brand_null_index = test_df[test_df['brand_name']=='paulnull'].index
-            # key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
-            # train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
-            # test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
-            # n_before = train_brand_null_index.size + test_brand_null_index.size
-            # n_after = (train_df['brand_name'] == 'paulnull').sum() + (test_df['brand_name'] == 'paulnull').sum()
-            # record_log(local_flag, '直接desc -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
-            # record_log(local_flag, '填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
-            #
-            # col_key = 'name+cat'
-            # brand_start_time = time.time()
-            # train_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
-            # test_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
-            # train_df[col_key] = train_df.apply(lambda row: row['name'] + row['category_name'], axis=1)
-            # test_df[col_key] = test_df.apply(lambda row: row['name'] + row['category_name'], axis=1)
-            # all_df = pd.concat([train_df, test_df]).reset_index(drop=True).loc[:, train_df.columns[1:]]
-            # have_brand_df = all_df[all_df['brand_name'] != 'paulnull'].copy()
-            # train_brand_null_index = train_df[train_df['brand_name']=='paulnull'].index
-            # test_brand_null_index = test_df[test_df['brand_name']=='paulnull'].index
-            # key2brand_map = do_col2brand_dict(data_df=have_brand_df, key_col=col_key)
-            # train_df.loc[train_brand_null_index, 'brand_name'] = train_df.loc[train_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
-            # test_df.loc[test_brand_null_index, 'brand_name'] = test_df.loc[test_brand_null_index, col_key].map(lambda x: get_brand_by_key(x, key2brand_map))
-            # n_before = train_brand_null_index.size + test_brand_null_index.size
-            # n_after = (train_df['brand_name'] == 'paulnull').sum() + (test_df['brand_name'] == 'paulnull').sum()
-            # record_log(local_flag, 'name+cat -> brand词, 耗时 {:.3f}s'.format(time.time() - brand_start_time))
-            # record_log(local_flag, '填充前有{}个空数据，填充后有{}个空数据，填充了{}个数据的brand'.format(n_before, n_after, n_before - n_after))
+        if brand_fill_type == 'fill_missing':
+            train_df['brand_name'].fillna(value="missing", inplace=True)
+            test_df['brand_name'].fillna(value="missing", inplace=True)
         else:
             print('【错误】：brand_fill_type should be: "fill_paulnull" or "base_other_cols" or "base_NB" or "base_GRU" ')
 
 
 
 
-        if cat_fill_type == 'fill_paulnull':
-            train_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
-            test_df['category_name'].fillna(value="paulnull/paulnull/paulnull", inplace=True)
+        if cat_fill_type == 'fill_Other':
+            train_df['category_name'].fillna(value="Other", inplace=True)
+            test_df['category_name'].fillna(value="Other", inplace=True)
         else:
             print('【错误】：cat_fill_type should be: "fill_paulnull" others are too cost time: "base_name" or "base_brand"')
 
@@ -285,8 +201,8 @@ class DataReader():
         将文本列分词并转编码，构成编码list
         """
         # 分割文本成词，然后将词转成编码(先分词，后编码, 编码从1开始)
-        name_tok_raw = Tokenizer(num_words=250000, filters='\t\n')
-        desc_tok_raw = Tokenizer(num_words=600000, filters='\t\n')
+        name_tok_raw = Tokenizer(num_words=250000)
+        desc_tok_raw = Tokenizer(num_words=600000)
         # 这里构成raw文本的时候没有加入test数据是因为就算test中有新出现的词也不会在后续训练中改变词向量, but in SEQ will change
         name_raw_text = np.hstack([self.train_df['name'].str.lower(), self.test_df['name'].str.lower()])
         desc_raw_text = np.hstack([self.train_df['item_description'].str.lower(), self.test_df['item_description'].str.lower()])
@@ -294,6 +210,7 @@ class DataReader():
         desc_tok_raw.fit_on_texts(desc_raw_text)
         self.n_name_dict_words = min(max(name_tok_raw.word_index.values()), name_tok_raw.num_words) + 2
         self.n_desc_dict_words = min(max(desc_tok_raw.word_index.values()), desc_tok_raw.num_words) + 2
+        print("self.n_name_dict_words={}, self.n_desc_dict_words={}".format(self.n_name_dict_words, self.n_desc_dict_words))
 
         # self.train_df["cat_int_seq"] = tok_raw.texts_to_sequences(self.train_df.category_name.str.lower())
         # self.test_df["cat_int_seq"] = tok_raw.texts_to_sequences(self.test_df.category_name.str.lower())
@@ -347,6 +264,7 @@ class DataReader():
         print("self.train_df.desc_npc_cnt.max() =", self.train_df.desc_npc_cnt.max())
         print("self.test_df.desc_npc_cnt.max() =", self.test_df.desc_npc_cnt.max())
         self.n_npc_max_cnt = np.max([self.train_df.desc_npc_cnt.max(), self.test_df.desc_npc_cnt.max()]) + 1
+        print("n_category:{},n_brand:{},n_condition_id:{},n_desc_max_len:{}".format(self.n_category, self.n_brand, self.n_condition_id, self.n_desc_max_len))
 
     def split_get_train_validation(self):
         """

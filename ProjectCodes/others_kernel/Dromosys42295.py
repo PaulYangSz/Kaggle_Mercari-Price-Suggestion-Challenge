@@ -86,27 +86,28 @@ del le
 
 
 print("Transforming text data to sequences...")
-raw_text = np.hstack([full_df.item_description.str.lower(), full_df.name.str.lower()])
+name_raw_text = full_df.name.str.lower()
+desc_raw_text = full_df.item_description.str.lower()
 
 print("   Fitting tokenizer...")
-tok_raw = Tokenizer()
-tok_raw.fit_on_texts(raw_text)
+name_tok_raw = Tokenizer(num_words=250000)
+desc_tok_raw = Tokenizer(num_words=600000)
+name_tok_raw.fit_on_texts(name_raw_text)
+desc_tok_raw.fit_on_texts(desc_raw_text)
 
 print("   Transforming text to sequences...")
-full_df['seq_item_description'] = tok_raw.texts_to_sequences(full_df.item_description.str.lower())
+full_df['seq_item_description'] = desc_tok_raw.texts_to_sequences(full_df.item_description.str.lower())
 full_df['desc_len'] = full_df['seq_item_description'].map(len)
-full_df['seq_name'] = tok_raw.texts_to_sequences(full_df.name.str.lower())
+full_df['seq_name'] = name_tok_raw.texts_to_sequences(full_df.name.str.lower())
 
-del tok_raw
 
 
 # Define constants to use when define RNN model
 MAX_NAME_SEQ = 10
 MAX_ITEM_DESC_SEQ = 75
-MAX_TEXT = np.max([
-    np.max(full_df.seq_name.max()),
-    np.max(full_df.seq_item_description.max()),
-]) + 4
+MAX_NAME_TEXT = min(max(name_tok_raw.word_index.values()), name_tok_raw.num_words) + 2
+MAX_DESC_TEXT = min(max(desc_tok_raw.word_index.values()), desc_tok_raw.num_words) + 2
+del name_tok_raw, desc_tok_raw
 MAX_CATEGORY = np.max(full_df.category_name.max()) + 1
 MAX_BRAND = np.max(full_df.brand_name.max()) + 1
 MAX_CONDITION = np.max(full_df.item_condition_id.max()) + 1
@@ -148,8 +149,8 @@ def new_rnn_model(lr=0.001, decay=0.0):
     num_vars = Input(shape=[X_train["num_vars"].shape[1]], name="num_vars")
 
     # Embeddings layers
-    emb_name = Embedding(MAX_TEXT, 20)(name)
-    emb_item_desc = Embedding(MAX_TEXT, 60)(item_desc)
+    emb_name = Embedding(MAX_NAME_TEXT, 20)(name)
+    emb_item_desc = Embedding(MAX_DESC_TEXT, 60)(item_desc)
     emb_brand_name = Embedding(MAX_BRAND, 10)(brand_name)
     emb_category_name = Embedding(MAX_CATEGORY, 10)(category_name)
     emb_desc_len = Embedding(MAX_CATEGORY, 7)(desc_len)

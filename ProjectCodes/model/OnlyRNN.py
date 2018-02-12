@@ -141,7 +141,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         name = Input(shape=[reader.name_seq_len], name="name")
         item_desc = Input(shape=[reader.item_desc_seq_len], name="item_desc")
         item_condition = Input(shape=[1], name="item_condition")
-        category_name = Input(shape=[1], name="category_name")
+        category = Input(shape=[1], name="category")
         brand = Input(shape=[1], name="brand")
         num_vars = Input(shape=[1], name="num_vars")
         desc_len = Input(shape=[1], name="desc_len")
@@ -153,7 +153,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         # todo: 是否name和item_desciption的Embedding要共用? (词向量输出的维度不一样不能共用)
         emb_name = Embedding(input_dim=reader.n_name_dict_words, output_dim=self.name_emb_dim, embeddings_initializer='glorot_normal')(name)
         emb_item_desc = Embedding(reader.n_desc_dict_words, self.item_desc_emb_dim, embeddings_initializer='glorot_normal')(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
-        emb_category = Embedding(reader.n_cat_main, self.category_emb_dim, embeddings_initializer='glorot_normal')(category_name)
+        emb_category = Embedding(reader.n_category, self.category_emb_dim, embeddings_initializer='glorot_normal')(category)
         emb_brand = Embedding(reader.n_brand, self.brand_emb_dim, embeddings_initializer='glorot_uniform')(brand)
         emb_desc_len = Embedding(reader.n_desc_max_len, self.desc_len_dim, embeddings_initializer='glorot_normal')(desc_len)
         emb_desc_npc_cnt = Embedding(reader.n_npc_max_cnt, self.npc_cnt_dim, embeddings_initializer='glorot_uniform')(desc_npc_cnt)
@@ -186,8 +186,8 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         output = Dense(1, activation="linear")(main_layer)
 
         # model
-        model = Model(inputs=[name, item_desc, brand, category_name, item_condition,
-                              num_vars, desc_len, desc_npc_cnt],  # category_name
+        model = Model(inputs=[name, item_desc, brand, category, item_condition,
+                              num_vars, desc_len, desc_npc_cnt],
                       outputs=output)
         # optimizer = optimizers.RMSprop()
         optimizer = Adam(lr=0.001, decay=0.0)
@@ -283,10 +283,10 @@ class CvGridParams(object):
                 'bn_flag': [True],  # Batch-Norm switch
                 'drop_out_layers': [(0.0, 0.0, 0.0, 0.0)],  # DNN parameters
                 'dense_layers_unit': [(1024, 512, 256, 64)],
-                'epochs': [4],  # LR parameters
-                'batch_size': [512*3],
-                'lr_init': [0.00985, 0.00975, 0.00995, 0.01005, 0.00965],
-                'lr_final': [0.000148, 0.000158, 0.000158],
+                'epochs': [2],  # LR parameters
+                'batch_size': [512*2],
+                'lr_init': [0.00985],
+                'lr_final': [0.000148],
                 # 'lr_init': [0.00985, 0.00975, 0.00995, 0.01005, 0.00965],  # np.geomspace(0.009, 0.01, 1000)
                 # 'lr_final': np.arange(0.000125, 0.000131, 0.000001),  # [0.000128]
             }

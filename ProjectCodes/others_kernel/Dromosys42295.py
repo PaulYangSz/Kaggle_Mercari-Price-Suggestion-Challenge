@@ -94,6 +94,7 @@ tok_raw.fit_on_texts(raw_text)
 
 print("   Transforming text to sequences...")
 full_df['seq_item_description'] = tok_raw.texts_to_sequences(full_df.item_description.str.lower())
+full_df['desc_len'] = full_df['seq_item_description'].map(len)
 full_df['seq_name'] = tok_raw.texts_to_sequences(full_df.name.str.lower())
 
 del tok_raw
@@ -109,6 +110,7 @@ MAX_TEXT = np.max([
 MAX_CATEGORY = np.max(full_df.category_name.max()) + 1
 MAX_BRAND = np.max(full_df.brand_name.max()) + 1
 MAX_CONDITION = np.max(full_df.item_condition_id.max()) + 1
+MAX_DESC_LEN = np.max(full_df.desc_len.max()) + 1
 MAX_NPC_CNT = np.max(full_df.desc_npc_cnt.max()) + 1
 
 
@@ -119,6 +121,7 @@ def get_keras_data(df):
         'brand_name': np.array(df.brand_name),
         'category_name': np.array(df.category_name),
         'item_condition': np.array(df.item_condition_id),
+        'desc_len': np.array(df.desc_len),
         'desc_npc_cnt': np.array(df.desc_npc_cnt),
         'num_vars': np.array(df[["shipping"]]),
     }
@@ -140,6 +143,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     brand_name = Input(shape=[1], name="brand_name")
     category_name = Input(shape=[1], name="category_name")
     item_condition = Input(shape=[1], name="item_condition")
+    desc_len = Input(shape=[1], name="desc_len")
     desc_npc_cnt = Input(shape=[1], name="desc_npc_cnt")
     num_vars = Input(shape=[X_train["num_vars"].shape[1]], name="num_vars")
 
@@ -148,6 +152,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     emb_item_desc = Embedding(MAX_TEXT, 60)(item_desc)
     emb_brand_name = Embedding(MAX_BRAND, 10)(brand_name)
     emb_category_name = Embedding(MAX_CATEGORY, 10)(category_name)
+    emb_desc_len = Embedding(MAX_CATEGORY, 7)(desc_len)
     emb_desc_npc_cnt = Embedding(MAX_NPC_CNT, 7)(desc_npc_cnt)
 
     # rnn layers
@@ -158,6 +163,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     main_l = concatenate([
         Flatten() (emb_brand_name),
         Flatten() (emb_category_name),
+        Flatten() (emb_desc_len),
         Flatten() (emb_desc_npc_cnt),
         item_condition,
         rnn_layer1,
@@ -177,7 +183,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     # the output layer.
     output = Dense(1, activation="linear") (main_l)
 
-    model = Model([name, item_desc, brand_name , category_name, item_condition, desc_npc_cnt, num_vars], output)
+    model = Model([name, item_desc, brand_name , category_name, item_condition, desc_len, desc_npc_cnt, num_vars], output)
 
     optimizer = Adam(lr=lr, decay=decay)
     model.compile(loss="mse", optimizer=optimizer)

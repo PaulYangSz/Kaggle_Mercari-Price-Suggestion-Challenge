@@ -39,6 +39,18 @@ train_df = fill_missing_values(train_df)
 test_df = fill_missing_values(test_df)
 
 
+# 统计下description中特殊字符的个数
+npc_patten = re.compile(r'!')  # '!+'
+def patten_count(text, patten_):
+    try:
+        # text = text.lower()
+        return len(patten_.findall(text))
+    except:
+        return 0
+train_df['desc_npc_cnt'] = train_df['item_description'].map(lambda x: patten_count(x, npc_patten))
+test_df['desc_npc_cnt'] = test_df['item_description'].map(lambda x: patten_count(x, npc_patten))
+
+
 # Scale target variable to log.
 train_df["target"] = np.log1p(train_df.price)
 
@@ -99,6 +111,7 @@ MAX_CATEGORY = np.max(full_df.category_name.max()) + 1
 MAX_BRAND = np.max(full_df.brand_name.max()) + 1
 MAX_CONDITION = np.max(full_df.item_condition_id.max()) + 1
 MAX_DESC_LEN = np.max(full_df.desc_len.max()) + 1
+MAX_NPC_CNT = np.max(full_df.desc_npc_cnt.max()) + 1
 
 
 def get_keras_data(df):
@@ -109,6 +122,7 @@ def get_keras_data(df):
         'category_name': np.array(df.category_name),
         'item_condition': np.array(df.item_condition_id),
         'desc_len': np.array(df.desc_len),
+        'desc_npc_cnt': np.array(df.desc_npc_cnt),
         'num_vars': np.array(df[["shipping"]]),
     }
     return X
@@ -130,6 +144,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     category_name = Input(shape=[1], name="category_name")
     item_condition = Input(shape=[1], name="item_condition")
     desc_len = Input(shape=[1], name="desc_len")
+    desc_npc_cnt = Input(shape=[1], name="desc_npc_cnt")
     num_vars = Input(shape=[X_train["num_vars"].shape[1]], name="num_vars")
 
     # Embeddings layers
@@ -138,6 +153,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     emb_brand_name = Embedding(MAX_BRAND, 10)(brand_name)
     emb_category_name = Embedding(MAX_CATEGORY, 10)(category_name)
     emb_desc_len = Embedding(MAX_CATEGORY, 7)(desc_len)
+    emb_desc_npc_cnt = Embedding(MAX_NPC_CNT, 7)(desc_npc_cnt)
 
     # rnn layers
     rnn_layer1 = GRU(16) (emb_item_desc)
@@ -148,6 +164,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
         Flatten() (emb_brand_name),
         Flatten() (emb_category_name),
         Flatten() (emb_desc_len),
+        Flatten() (emb_desc_npc_cnt),
         item_condition,
         rnn_layer1,
         rnn_layer2,
@@ -166,7 +183,7 @@ def new_rnn_model(lr=0.001, decay=0.0):
     # the output layer.
     output = Dense(1, activation="linear") (main_l)
 
-    model = Model([name, item_desc, brand_name , category_name, item_condition, desc_len, num_vars], output)
+    model = Model([name, item_desc, brand_name , category_name, item_condition, desc_len, desc_npc_cnt, num_vars], output)
 
     optimizer = Adam(lr=lr, decay=decay)
     model.compile(loss="mse", optimizer=optimizer)

@@ -61,155 +61,6 @@ def record_log(local_flag, str_log):
         print(str_log)
 
 
-def collect_W_char(str_from):
-    if isinstance(str_from, str):
-        W_finder = re.compile('\W')
-        return set(W_finder.findall(str_from))
-    else:
-        return set()
-
-
-def set_merge(set1, set2):
-    return set1.union(set2)
-
-
-def rm_regex_char(raw_str):
-    raw_str = raw_str.replace('?', "\?")
-    raw_str = raw_str.replace('*', "\*")
-    raw_str = raw_str.replace('.', "\.")
-    raw_str = raw_str.replace('|', "\|")
-    raw_str = raw_str.replace('+', "\+")
-    return raw_str
-
-
-def recover_regex_char(raw_str):
-    raw_str = raw_str.replace('\?', "?")
-    raw_str = raw_str.replace('\*', "*")
-    raw_str = raw_str.replace('\.', ".")
-    raw_str = raw_str.replace('\|', "|")
-    raw_str = raw_str.replace('\+', "+")
-    return raw_str
-
-
-def split_cat_name(name, str_class):
-    sub_array = name.split('/')
-    if str_class == 'main':
-        return sub_array[0]
-    elif str_class == 'sub':
-        return sub_array[1]
-    else:
-        return '/'.join(sub_array[2:])
-
-
-def get_brand_top_cat0_info_df(df_source:pd.DataFrame):
-    """
-    brand -> [top_cat0_name, count]
-    :param df_source: train_df + test_df
-    """
-    df_source_have_cat = df_source[~df_source.category_name.isnull()].copy()
-    df_source_have_cat.loc[:, 'cat_main'] = df_source_have_cat['category_name'].map(lambda x: split_cat_name(x, 'main'))
-    group_brand = df_source_have_cat['cat_main'].groupby(df_source_have_cat['brand_name'])
-    top_cat_main_ser = group_brand.apply(lambda x: x.value_counts().index[0])
-    top_cat_main_ser.name = 'top_cat_main'
-    top_cat_main_count_ser = group_brand.apply(lambda x: x.value_counts().iloc[0])
-    top_cat_main_count_ser.name = 'item_count'
-    index_brand = df_source_have_cat['brand_name'].value_counts().index
-    ret_brand_top_cat0_info_df = pd.DataFrame({'top_cat_main': top_cat_main_ser, 'item_count': top_cat_main_count_ser},
-                                              index=index_brand,
-                                              columns=['top_cat_main', 'item_count'])
-    return ret_brand_top_cat0_info_df, ret_brand_top_cat0_info_df['top_cat_main'].to_dict()
-
-
-def base_other_cols_get_brand(brand_known_ordered_list:list, brand_top_cat0_dict:dict, row_ser:pd.Series):
-    """
-    通过前面的数据分析可以看到，name是不为空的，所以首先查看name中是否包含brand信息，找到匹配的brand集合
-    其次使用item_description信息来缩小上述brand集合 (暂停使用)
-    再次使用cat信息来看对应哪个brand最可能在这个cat上
-    :param row_ser: 包含所需列的row
-    :param brand_known_ordered_list: 按照商品个数有序的品牌list
-    :param brand_top_cat0_info_df: brand对应top1主类别和item数目
-    """
-    if pd.isnull(row_ser['brand_name']):
-        name = row_ser['name']
-        brand_in_name = list()
-        for brand in brand_known_ordered_list:
-            # 在数据中，有的品牌名只会出现首个单词，不过看起来不像是大多数，所以索性还是从简单开始处理吧
-            # 有的品牌名称和普通单词接近，比如Select，Complete之类，所以尽管有nike这样的小写存在，但是还是先不考虑小写了。
-            rm_regex_brand = rm_regex_char(brand)
-            brand_finder = re.compile(r'\b' + rm_regex_brand + r'\b')  # re.I
-            if brand_finder.search(name):
-                brand_in_name.append(brand)
-        if len(brand_in_name) > 0:
-            if pd.isnull(row_ser['category_name']):
-                return brand_in_name[0]
-            else:
-                cat_main = row_ser['category_name'].split('/')[0]
-                for brand in brand_in_name:
-                    if brand in brand_top_cat0_dict and brand_top_cat0_dict[brand] == cat_main:
-                        return brand
-                return 'paulnull'
-        else:
-            return 'paulnull'
-            # 暂停使用description来查找brand
-            # desc = row_ser['item_description']
-            # brand_in_desc = list()
-            # if not pd.isnull(desc):
-            #     for brand in brand_known_ordered_list:
-            #         brand = rm_regex_char(brand)
-            #         brand_finder = re.compile(r'\b' + brand + r'\b')  # re.I
-            #         if brand_finder.search(desc):
-            #             brand_in_desc.append(brand)
-
-    #     if len(brand_in_name) == 0:
-    #         brand_select = brand_in_desc
-    #     else:
-    #         if len(brand_in_desc) == 0:
-    #             brand_select = brand_in_name
-    #         else:
-    #             brand_inter = [brand_ for brand_ in brand_in_name if brand_ in brand_in_desc]
-    #             brand_select = brand_inter if len(brand_inter) > 0 else brand_in_name
-    #
-    #     if len(brand_select) == 1:
-    #         return brand_select[0]
-    #     elif len(brand_select) == 0:
-    #         return 'paulnull'
-    #     else:
-    #         if pd.isnull(row_ser['category_name']):
-    #             return brand_select[0]
-    #         else:
-    #             max_count = 0
-    #             ret_brand = ''
-    #             cat_main = row_ser['category_name'].split('/')[0]
-    #             for brand in brand_select:
-    #                 if brand_top_cat0_info_df.loc[brand, 'top_cat_main'] == cat_main:
-    #                     this_count = brand_top_cat0_info_df.loc[brand, 'item_count']
-    #                     if this_count >= max_count:
-    #                         max_count = this_count
-    #                         ret_brand = brand
-    #             if max_count == 0:
-    #                 return 'paulnull'
-    #             else:
-    #                 return ret_brand
-    else:
-        return row_ser['brand_name']
-
-
-# TODO: base_name_get_brand可以尝试加入cat来判断，因为这个可能不是耗时的重点(不过一旦加入就要轮询band_list到底了)
-def base_name_get_brand(rm_regex_brand_known_ordered_list:list, str_name):
-    """
-    通过前面的数据分析可以看到，name是不为空的，所以首先查看name中是否包含brand信息，找到匹配的brand集合
-    再次使用cat信息来看对应哪个brand最可能在这个cat上 (因为想使用map而不是apply，所以可以考虑接下来再做一次map)
-    """
-    for rm_regex_brand in rm_regex_brand_known_ordered_list:
-        # 在数据中，有的品牌名只会出现首个单词，不过看起来不像是大多数，所以索性还是从简单开始处理吧
-        # 有的品牌名称和普通单词接近，比如Select，Complete之类，所以尽管有nike这样的小写存在，但是还是先不考虑小写了。
-        brand_finder = re.compile(r'\b' + rm_regex_brand + r'\b')  # re.I
-        if brand_finder.search(str_name):
-            return recover_regex_char(rm_regex_brand)
-    else:
-        return 'paulnull'
-
-
 class DataReader():
 
     def __init__(self, local_flag:bool, cat_fill_type:str, brand_fill_type:str, item_desc_fill_type:str):
@@ -398,16 +249,6 @@ class DataReader():
         else:
             print('【错误】：cat_fill_type should be: "fill_paulnull" others are too cost time: "base_name" or "base_brand"')
 
-        # splitting category_name into subcategories
-        def split_cat(text):
-            try:
-                return text.split("/")
-            except:
-                return ("No Label", "No Label", "No Label")
-        train_df['cat_name_main'], train_df['cat_name_sub'], train_df['cat_name_sub2'] = zip(*train_df['category_name'].apply(lambda x: split_cat(x)))
-        test_df['cat_name_main'], test_df['cat_name_sub'], test_df['cat_name_sub2'] = zip(*test_df['category_name'].apply(lambda x: split_cat(x)))
-        record_log(local_flag, "\n初始化之后train_df的列有{}".format(train_df.columns))
-        record_log(local_flag, "\n初始化之后test_df的列有{}".format(test_df.columns))
 
         self.train_df = train_df
         self.test_df = test_df
@@ -416,28 +257,19 @@ class DataReader():
         self.item_desc_seq_len = 0
         self.n_name_dict_words = 0
         self.n_desc_dict_words = 0
-        self.n_cat_main = 0
-        self.n_cat_sub = 0
-        self.n_cat_sub2 = 0
+        self.n_category = 0
         self.n_brand = 0
         self.n_condition_id = 0
-        self.n_name_max_len = 0
         self.n_desc_max_len = 0
         self.n_npc_max_cnt = 0
 
     def le_encode(self):
         le = LabelEncoder()  # 给字符串或者其他对象编码, 从0开始编码
 
-        # LabelEncoder cat_main & cat_sub & cat_sub2
-        le.fit(np.hstack([self.train_df['cat_name_main'], self.test_df['cat_name_main']]))
-        self.train_df['cat_main_le'] = le.transform(self.train_df['cat_name_main'])
-        self.test_df['cat_main_le'] = le.transform(self.test_df['cat_name_main'])
-        le.fit(np.hstack([self.train_df['cat_name_sub'], self.test_df['cat_name_sub']]))
-        self.train_df['cat_sub_le'] = le.transform(self.train_df['cat_name_sub'])
-        self.test_df['cat_sub_le'] = le.transform(self.test_df['cat_name_sub'])
-        le.fit(np.hstack([self.train_df['cat_name_sub2'], self.test_df['cat_name_sub2']]))
-        self.train_df['cat_sub2_le'] = le.transform(self.train_df['cat_name_sub2'])
-        self.test_df['cat_sub2_le'] = le.transform(self.test_df['cat_name_sub2'])
+        # LabelEncoder category_name
+        le.fit(np.hstack([self.train_df['category_name'], self.test_df['category_name']]))
+        self.train_df['category_le'] = le.transform(self.train_df['category_name'])
+        self.test_df['category_le'] = le.transform(self.test_df['category_name'])
 
         # LabelEncoder brand_name
         le.fit(np.hstack([self.train_df['brand_name'], self.test_df['brand_name']]))
@@ -469,8 +301,6 @@ class DataReader():
         self.test_df["name_int_seq"] = name_tok_raw.texts_to_sequences(self.test_df.name.str.lower())
         self.train_df["desc_int_seq"] = desc_tok_raw.texts_to_sequences(self.train_df.item_description.str.lower())
         self.test_df["desc_int_seq"] = desc_tok_raw.texts_to_sequences(self.test_df.item_description.str.lower())
-        self.train_df['name_len'] = self.train_df['name_int_seq'].apply(len)
-        self.test_df['name_len'] = self.test_df['name_int_seq'].apply(len)
         self.train_df['desc_len'] = self.train_df['desc_int_seq'].apply(len)
         self.test_df['desc_len'] = self.test_df['desc_int_seq'].apply(len)
 
@@ -480,11 +310,6 @@ class DataReader():
                     if length <= bins[i]:
                         return i
                 return len(bins)
-            # train_name_bins = list(range(1, self.train_df['name_len'].max()+4, 2))
-            train_name_bins = list(set(self.train_df['name_len'].quantile([q/1000 for q in range(1, 1001)]).values))
-            train_name_bins.sort()
-            self.train_df['name_len'] = self.train_df['name_len'].apply(lambda x: len_2_bins(x, train_name_bins))
-            self.test_df['name_len'] = self.test_df['name_len'].apply(lambda x: len_2_bins(x, train_name_bins))
             # train_desc_bins = list(range(1, self.train_df['desc_len'].max()+5, 3))
             train_desc_bins = list(set(self.train_df['desc_len'].quantile([q/1000 for q in range(1, 1001)]).values))
             train_desc_bins.sort()
@@ -515,13 +340,10 @@ class DataReader():
         # TODO: 序列长度参数可调
         self.name_seq_len = 10  # 最长17个词
         self.item_desc_seq_len = 75  # 最长269个词，90%在62个词以内
-        self.n_cat_main = np.max([self.train_df.cat_main_le.max(), self.test_df.cat_main_le.max()]) + 1  # LE编码后最大值+1
-        self.n_cat_sub = np.max([self.train_df.cat_sub_le.max(), self.test_df.cat_sub_le.max()]) + 1
-        self.n_cat_sub2 = np.max([self.train_df.cat_sub2_le.max(), self.test_df.cat_sub2_le.max()]) + 1
+        self.n_category = np.max([self.train_df.category_le.max(), self.test_df.category_le.max()]) + 1  # LE编码后最大值+1
         self.n_brand = np.max([self.train_df.brand_le.max(), self.test_df.brand_le.max()])+1
         self.n_condition_id = np.max([self.train_df.item_condition_id.max(), self.test_df.item_condition_id.max()])+1
         self.n_desc_max_len = np.max([self.train_df.desc_len.max(), self.test_df.desc_len.max()]) + 1
-        self.n_name_max_len = np.max([self.train_df.name_len.max(), self.test_df.name_len.max()]) + 1
         print("self.train_df.desc_npc_cnt.max() =", self.train_df.desc_npc_cnt.max())
         print("self.test_df.desc_npc_cnt.max() =", self.test_df.desc_npc_cnt.max())
         self.n_npc_max_cnt = np.max([self.train_df.desc_npc_cnt.max(), self.test_df.desc_npc_cnt.max()]) + 1
@@ -549,21 +371,18 @@ class DataReader():
             'name': pad_sequences(dataset['name_int_seq'], maxlen=self.name_seq_len),
             'item_desc': pad_sequences(dataset.desc_int_seq, maxlen=self.item_desc_seq_len),
             'brand': np.array(dataset.brand_le),
-            'category_main': np.array(dataset.cat_main_le),
-            'category_sub': np.array(dataset.cat_sub_le),
-            'category_sub2': np.array(dataset.cat_sub2_le),
+            'category': np.array(dataset.category_le),
             'item_condition': np.array(dataset.item_condition_id),
             'num_vars': np.array(dataset[['shipping']]),
             'desc_len': np.array(dataset[["desc_len"]]),
-            'name_len': np.array(dataset[["name_len"]]),
             'desc_npc_cnt': np.array(dataset[["desc_npc_cnt"]]),
         }
         return X
 
     def del_redundant_cols(self):
         useful_cols = ['train_id', 'test_id', 'name', 'item_condition_id', 'category_name', 'brand_name', 'price', 'shipping',
-                       'item_description', 'cat_name_main', 'cat_name_sub', 'cat_name_sub2', 'cat_main_le', 'cat_sub_le', 'cat_sub2_le',
-                       'brand_le', 'name_int_seq', 'desc_int_seq', 'desc_len', 'name_len', 'desc_npc_cnt']
+                       'item_description', 'category_le',
+                       'brand_le', 'name_int_seq', 'desc_int_seq', 'desc_len', 'desc_npc_cnt']
         for col in self.train_df.columns:
             if col not in useful_cols:
                 del self.train_df[col]
@@ -581,7 +400,6 @@ class DataReader():
             dataset['shipping'] = dataset['shipping'].astype(str)
             dataset['item_condition_id'] = dataset['item_condition_id'].astype(str)
             dataset['desc_len'] = dataset['desc_len'].astype(str)
-            dataset['name_len'] = dataset['name_len'].astype(str)
             dataset['desc_npc_cnt'] = dataset['desc_npc_cnt'].astype(str)
             dataset['desc_len_diff'] = dataset['desc_len_diff'].astype(str)
         cols_astype_to_str(self.train_df)
@@ -599,15 +417,9 @@ class DataReader():
                 ngram_range=(1, 2),
                 max_features=50000,
                 preprocessor=build_preprocessor('name'))),
-            ('cat_name_main', CountVectorizer(
+            ('category_name', CountVectorizer(
                 token_pattern='.+',
-                preprocessor=build_preprocessor('cat_name_main'))),
-            ('cat_name_sub', CountVectorizer(
-                token_pattern='.+',
-                preprocessor=build_preprocessor('cat_name_sub'))),
-            ('cat_name_sub2', CountVectorizer(
-                token_pattern='.+',
-                preprocessor=build_preprocessor('cat_name_sub2'))),
+                preprocessor=build_preprocessor('category_name'))),
             ('brand_name', CountVectorizer(
                 token_pattern='.+',
                 preprocessor=build_preprocessor('brand_name'))),
@@ -620,9 +432,6 @@ class DataReader():
             ('desc_len', CountVectorizer(
                 token_pattern='\d+',
                 preprocessor=build_preprocessor('desc_len'))),
-            ('name_len', CountVectorizer(
-                token_pattern='\d+',
-                preprocessor=build_preprocessor('name_len'))),
             ('desc_npc_cnt', CountVectorizer(
                 token_pattern='\d+',
                 preprocessor=build_preprocessor('desc_npc_cnt'))),

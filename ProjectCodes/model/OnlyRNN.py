@@ -108,8 +108,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         The labels passed during :meth:`fit`
     """
 
-    def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, brand_emb_dim=10,
-                 category_emb_dim=10, desc_len_dim=5, npc_cnt_dim=5,
+    def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, brand_emb_dim=10, category_emb_dim=10, npc_cnt_dim=5,
                  GRU_layers_out_dim=(8, 16), bn_flag=False, drop_out_layers=(0.25, 0.1), dense_layers_unit=(128, 64),
                  epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007):
         self.data_reader = data_reader
@@ -117,7 +116,6 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.item_desc_emb_dim = item_desc_emb_dim
         self.brand_emb_dim = brand_emb_dim
         self.category_emb_dim = category_emb_dim
-        self.desc_len_dim = desc_len_dim
         self.npc_cnt_dim = npc_cnt_dim
         self.GRU_layers_out_dim = GRU_layers_out_dim
         self.bn_flag = bn_flag
@@ -144,7 +142,6 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         category = Input(shape=[1], name="category")
         brand = Input(shape=[1], name="brand")
         num_vars = Input(shape=[1], name="num_vars")
-        desc_len = Input(shape=[1], name="desc_len")
         desc_npc_cnt = Input(shape=[1], name="desc_npc_cnt")
 
         # Embedding的作用是配置字典size和词向量len后，根据call参数的indices，返回词向量.
@@ -155,7 +152,6 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         emb_item_desc = Embedding(reader.n_desc_dict_words, self.item_desc_emb_dim, embeddings_initializer='glorot_normal')(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
         emb_category = Embedding(reader.n_category, self.category_emb_dim, embeddings_initializer='glorot_normal')(category)
         emb_brand = Embedding(reader.n_brand, self.brand_emb_dim, embeddings_initializer='glorot_uniform')(brand)
-        emb_desc_len = Embedding(reader.n_desc_max_len, self.desc_len_dim, embeddings_initializer='glorot_normal')(desc_len)
         emb_desc_npc_cnt = Embedding(reader.n_npc_max_cnt, self.npc_cnt_dim, embeddings_initializer='glorot_uniform')(desc_npc_cnt)
 
         # GRU是配置一个cell输出的units长度后，根据call词向量入参,输出最后一个GRU cell的输出(因为默认return_sequences=False)
@@ -167,12 +163,10 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         # 连接列表中的Tensor，按照axis组成一个大的Tensor
         main_layer = concatenate([Flatten()(emb_brand),  # [None, 1, 10] -> [None, 10]
                                   Flatten()(emb_category),
-                                  Flatten()(emb_desc_len),
                                   Flatten()(emb_desc_npc_cnt),
                                   item_condition,
                                   rnn_layer_name,
                                   rnn_layer_item_desc,
-                                  # rnn_layer_cat_name,
                                   num_vars])
         # Concat[all] -> Dense1 -> ... -> DenseN
         for i in range(len(self.dense_layers_unit)):
@@ -186,8 +180,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         output = Dense(1, activation="linear")(main_layer)
 
         # model
-        model = Model(inputs=[name, item_desc, brand, category, item_condition,
-                              num_vars, desc_len, desc_npc_cnt],
+        model = Model(inputs=[name, item_desc, brand, category, item_condition, num_vars, desc_npc_cnt],
                       outputs=output)
         # optimizer = optimizers.RMSprop()
         optimizer = Adam(lr=0.001, decay=0.0)
@@ -276,7 +269,6 @@ class CvGridParams(object):
                 'item_desc_emb_dim': [50],
                 'category_emb_dim': [10],
                 'brand_emb_dim': [7],
-                'desc_len_dim': [3],
                 'npc_cnt_dim': [3],
                 # 'embed_initial': ['glorot_normal'],#['uniform', 'lecun_uniform', 'lecun_normal', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform'],
                 'GRU_layers_out_dim': [(6, 12)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)

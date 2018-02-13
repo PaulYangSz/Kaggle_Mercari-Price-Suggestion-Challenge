@@ -264,6 +264,7 @@ def leave_1_valid_random(model_class, tuning_params, n_params, all_data_df, n_va
     Input model and params output the tuning result(best_para_dict, result_df)
     :param model_class: Class of model
     :param tuning_params: {'param1': [value], 'tuning_param2': [value1, ... ,]}
+    :param n_params: Number of randomly select in all params.
     :param all_data_df:
     :param n_valid: number of validation
     :param test_ratio:

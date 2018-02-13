@@ -110,7 +110,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
 
     def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, brand_emb_dim=10, category_emb_dim=10,
                  desc_len_dim=7, npc_cnt_dim=7,
-                 GRU_layers_out_dim=(8, 16), bn_flag=False, drop_out_layers=(0.25, 0.1), dense_layers_unit=(128, 64),
+                 GRU_layers_out_dim=(8, 16), bn_flag=False, dense_layers_unit=(128, 64),
                  epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007):
         self.data_reader = data_reader
         self.name_emb_dim = name_emb_dim
@@ -121,8 +121,6 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.npc_cnt_dim = npc_cnt_dim
         self.GRU_layers_out_dim = GRU_layers_out_dim
         self.bn_flag = bn_flag
-        assert len(drop_out_layers) == len(dense_layers_unit)
-        self.drop_out_layers = drop_out_layers
         self.dense_layers_unit = dense_layers_unit
         self.emb_GRU_model = self.get_GRU_model(data_reader)
         # self.emb_GRU_model.summary(print_fn=RECORD_LOG)
@@ -179,7 +177,6 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
             if self.bn_flag:
                 main_layer = BatchNormalization()(main_layer)
             main_layer = Activation(activation='elu')(main_layer)
-            main_layer = Dropout(self.drop_out_layers[i])(main_layer)
 
         # output
         output = Dense(1, activation="linear")(main_layer)
@@ -279,7 +276,6 @@ class CvGridParams(object):
                 # 'embed_initial': ['glorot_normal'],#['uniform', 'lecun_uniform', 'lecun_normal', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform'],
                 'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
                 'bn_flag': [False],  # Batch-Norm switch
-                'drop_out_layers': [(0.0, 0.0, 0.0)],  # DNN parameters
                 'dense_layers_unit': [(256, 128, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*2],

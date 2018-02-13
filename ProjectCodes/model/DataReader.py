@@ -319,7 +319,6 @@ class DataReader():
             dataset['item_condition_id'] = dataset['item_condition_id'].astype(str)
             dataset['desc_len'] = dataset['desc_len'].astype(str)
             dataset['desc_npc_cnt'] = dataset['desc_npc_cnt'].astype(str)
-            dataset['desc_len_diff'] = dataset['desc_len_diff'].astype(str)
         cols_astype_to_str(self.train_df)
         cols_astype_to_str(self.test_df)
 
@@ -331,7 +330,6 @@ class DataReader():
 
         feat_union = FeatureUnion([
             ('name', CountVectorizer(
-                token_pattern=r"(?u)\S+",
                 ngram_range=(1, 2),
                 max_features=50000,
                 preprocessor=build_preprocessor('name'))),
@@ -353,11 +351,8 @@ class DataReader():
             ('desc_npc_cnt', CountVectorizer(
                 token_pattern='\d+',
                 preprocessor=build_preprocessor('desc_npc_cnt'))),
-            ('desc_len_diff', CountVectorizer(
-                token_pattern='\d+',
-                preprocessor=build_preprocessor('desc_len_diff'))),
             ('item_description', TfidfVectorizer(
-                token_pattern=r"(?u)\S+",
+                # token_pattern=r"(?u)\S+",
                 ngram_range=(1, 2),
                 max_features=100000,
                 preprocessor=build_preprocessor('item_description'))),

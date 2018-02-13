@@ -99,7 +99,9 @@ print("   Transforming text to sequences...")
 full_df['seq_item_description'] = desc_tok_raw.texts_to_sequences(full_df.item_description.str.lower())
 full_df['desc_len'] = full_df['seq_item_description'].map(len)
 full_df['seq_name'] = name_tok_raw.texts_to_sequences(full_df.name.str.lower())
-
+train_df['desc_len'] = full_df[:n_trains]['desc_len']
+dev_df['desc_len'] = full_df[n_trains:n_trains+n_devs]['desc_len']
+test_df['desc_len'] = full_df[n_trains+n_devs:]['desc_len']
 
 
 # Define constants to use when define RNN model
@@ -231,6 +233,8 @@ full_df = pd.concat([train_df, dev_df, test_df])
 # Convert data type to string
 full_df['shipping'] = full_df['shipping'].astype(str)
 full_df['item_condition_id'] = full_df['item_condition_id'].astype(str)
+full_df['desc_len'] = full_df['desc_len'].astype(str)
+full_df['desc_npc_cnt'] = full_df['desc_npc_cnt'].astype(str)
 
 
 print("Vectorizing data...")
@@ -256,6 +260,12 @@ vectorizer = FeatureUnion([
     ('item_condition_id', CountVectorizer(
         token_pattern='\d+',
         preprocessor=build_preprocessor('item_condition_id'))),
+    ('desc_len', CountVectorizer(
+        token_pattern='\d+',
+        preprocessor=build_preprocessor('desc_len'))),
+    ('desc_npc_cnt', CountVectorizer(
+        token_pattern='\d+',
+        preprocessor=build_preprocessor('desc_npc_cnt'))),
     ('item_description', TfidfVectorizer(
         ngram_range=(1, 3),
         max_features=100000,
@@ -299,6 +309,7 @@ print("RMSL error for RNN + Ridge on dev set:", rmsle(Y_dev, Y_dev_preds))
 
 preds = aggregate_predicts(rnn_preds, ridge_preds)
 preds[preds < 3] = 3
+preds[preds > 2000] = 2000
 submission = pd.DataFrame({
         "test_id": test_df.test_id,
         "price": preds.reshape(-1),

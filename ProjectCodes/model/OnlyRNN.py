@@ -176,7 +176,10 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
             main_layer = Dense(self.dense_layers_unit[i])(main_layer)
             if self.bn_flag:
                 main_layer = BatchNormalization()(main_layer)
-            main_layer = Activation(activation='elu')(main_layer)
+            if i == 0:
+                main_layer = Activation(activation='relu')(main_layer)
+            else:
+                main_layer = Activation(activation='elu')(main_layer)
 
         # output
         output = Dense(1, activation="linear")(main_layer)
@@ -273,16 +276,15 @@ class CvGridParams(object):
                 'brand_emb_dim': [10],
                 'desc_len_dim': [7],
                 'npc_cnt_dim': [7],
-                # 'embed_initial': ['glorot_normal'],#['uniform', 'lecun_uniform', 'lecun_normal', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform'],
-                'GRU_layers_out_dim': [(8, 16)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
+                'GRU_layers_out_dim': [(12, 24)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
                 'bn_flag': [False],  # Batch-Norm switch
                 'dense_layers_unit': [(256, 128, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*2],
-                'lr_init': [0.007], # 0.00985],
-                'lr_final': [0.0005], # 0.000148],
-                # 'lr_init': [0.00985, 0.00975, 0.00995, 0.01005, 0.00965],  # np.geomspace(0.009, 0.01, 1000)
-                # 'lr_final': np.arange(0.000125, 0.000131, 0.000001),  # [0.000128]
+                # 'lr_init': [0.007], # 0.00985],
+                # 'lr_final': [0.0005], # 0.000148],
+                'lr_init': np.linspace(0.0065, 0.0075, 101).tolist(),
+                'lr_final': np.linspace(0.00045, 0.00055, 101).tolist(),
             }
         else:
             print("Construct CvGridParams with error param_type: " + param_type)

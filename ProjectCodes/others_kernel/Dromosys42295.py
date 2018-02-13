@@ -158,8 +158,9 @@ def new_rnn_model(lr=0.001, decay=0.0):
     emb_desc_npc_cnt = Embedding(MAX_NPC_CNT, 7)(desc_npc_cnt)
 
     # rnn layers
-    rnn_layer1 = GRU(16) (emb_item_desc)
-    rnn_layer2 = GRU(8) (emb_name)
+    rnn_layer1 = GRU(24) (emb_item_desc)
+    rnn_layer2 = GRU(12) (emb_name)
+    print("GRU({})+GRU({})".format(24, 12))
 
     # main layers
     main_l = concatenate([
@@ -174,7 +175,8 @@ def new_rnn_model(lr=0.001, decay=0.0):
     ])
 
     main_l = Dense(256)(main_l)
-    main_l = Activation('elu')(main_l)
+    main_l = Activation('relu')(main_l)
+    print("1st Dense({}) is relu".format(256))
 
     main_l = Dense(128)(main_l)
     main_l = Activation('elu')(main_l)

@@ -153,12 +153,12 @@ def new_rnn_model(lr=0.001, decay=0.0):
     num_vars = Input(shape=[X_train["num_vars"].shape[1]], name="num_vars")
 
     # Embeddings layers
-    emb_name = Embedding(NAME_MAX_TEXT, 20)(name)
+    emb_name = Embedding(NAME_MAX_TEXT, 25)(name)
     emb_item_desc = Embedding(DESC_MAX_TEXT, 60)(item_desc)
-    emb_brand_name = Embedding(MAX_BRAND, 10)(brand_name)
-    emb_category_name = Embedding(MAX_CATEGORY, 10)(category_name)
+    emb_brand_name = Embedding(MAX_BRAND, 12)(brand_name)
+    emb_category_name = Embedding(MAX_CATEGORY, 12)(category_name)
     emb_desc_len = Embedding(MAX_CATEGORY, 7)(desc_len)
-    emb_desc_npc_cnt = Embedding(MAX_NPC_CNT, 7)(desc_npc_cnt)
+    emb_desc_npc_cnt = Embedding(MAX_NPC_CNT, 3)(desc_npc_cnt)
 
     # rnn layers
     rnn_layer1 = GRU(24) (emb_item_desc)
@@ -209,7 +209,7 @@ epochs = 2
 # Calculate learning rate decay.
 exp_decay = lambda init, fin, steps: (init/fin)**(1/(steps-1)) - 1
 steps = int(n_trains / BATCH_SIZE) * epochs
-lr_init, lr_fin = 0.007, 0.0005
+lr_init, lr_fin = 0.0069, 0.0005196
 lr_decay = exp_decay(lr_init, lr_fin, steps)
 
 rnn_model = new_rnn_model(lr=lr_init, decay=lr_decay)
@@ -230,13 +230,92 @@ rnn_preds = rnn_model.predict(X_test, batch_size=BATCH_SIZE, verbose=10)
 rnn_preds = np.expm1(rnn_preds)
 
 
-preds = rnn_preds
+
+# Concatenate train - dev - test data for easy to handle
+full_df = pd.concat([train_df, dev_df, test_df])
+
+# Convert data type to string
+full_df['shipping'] = full_df['shipping'].astype(str)
+full_df['item_condition_id'] = full_df['item_condition_id'].astype(str)
+full_df['desc_len'] = full_df['desc_len'].astype(str)
+full_df['desc_npc_cnt'] = full_df['desc_npc_cnt'].astype(str)
+
+
+print("Vectorizing data...")
+default_preprocessor = CountVectorizer().build_preprocessor()
+def build_preprocessor(field):
+    field_idx = list(full_df.columns).index(field)
+    return lambda x: default_preprocessor(x[field_idx])
+
+vectorizer = FeatureUnion([
+    ('name', CountVectorizer(
+        ngram_range=(1, 2),
+        max_features=50000,
+        preprocessor=build_preprocessor('name'))),
+    ('category_name', CountVectorizer(
+        token_pattern='.+',
+        preprocessor=build_preprocessor('category_name'))),
+    ('brand_name', CountVectorizer(
+        token_pattern='.+',
+        preprocessor=build_preprocessor('brand_name'))),
+    ('shipping', CountVectorizer(
+        token_pattern='\d+',
+        preprocessor=build_preprocessor('shipping'))),
+    ('item_condition_id', CountVectorizer(
+        token_pattern='\d+',
+        preprocessor=build_preprocessor('item_condition_id'))),
+    ('desc_len', CountVectorizer(
+        token_pattern='\d+',
+        preprocessor=build_preprocessor('desc_len'))),
+    ('desc_npc_cnt', CountVectorizer(
+        token_pattern='\d+',
+        preprocessor=build_preprocessor('desc_npc_cnt'))),
+    ('item_description', TfidfVectorizer(
+        ngram_range=(1, 3),
+        max_features=100000,
+        preprocessor=build_preprocessor('item_description'))),
+])
+
+X = vectorizer.fit_transform(full_df.values)
+
+X_train = X[:n_trains]
+X_dev = X[n_trains:n_trains+n_devs]
+X_test = X[n_trains+n_devs:]
+
+print(X.shape, X_train.shape, X_dev.shape, X_test.shape)
+
+
+print("Fitting Ridge model on training examples...")
+ridge_model = Ridge(
+    solver='auto', fit_intercept=True, alpha=0.5,
+    max_iter=100, normalize=False, tol=0.05,
+)
+ridge_model.fit(X_train, Y_train)
+
+
+Y_dev_preds_ridge = ridge_model.predict(X_dev)
+Y_dev_preds_ridge = Y_dev_preds_ridge.reshape(-1, 1)
+print("RMSL error on dev set:", rmsle(Y_dev, Y_dev_preds_ridge))
+
+
+ridge_preds = ridge_model.predict(X_test)
+ridge_preds = np.expm1(ridge_preds)
+
+
+def aggregate_predicts(Y1, Y2):
+    assert Y1.shape == Y2.shape
+    ratio = 0.63
+    return Y1 * ratio + Y2 * (1.0 - ratio)
+
+Y_dev_preds = aggregate_predicts(Y_dev_preds_rnn, Y_dev_preds_ridge)
+print("RMSL error for RNN + Ridge on dev set:", rmsle(Y_dev, Y_dev_preds))
+
+
+preds = aggregate_predicts(rnn_preds, ridge_preds)
 preds[preds < 3] = 3
 preds[preds > 2000] = 2000
 submission = pd.DataFrame({
         "test_id": test_df.test_id,
         "price": preds.reshape(-1),
-}, columns=['test_id', 'price'])
+})
 submission.to_csv("./rnn_ridge_submission.csv", index=False)
-
-

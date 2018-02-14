@@ -30,7 +30,7 @@ import logging
 import logging.config
 import lightgbm as lgb
 
-from ProjectCodes.model.Leave1Validation import leave_1_validation
+from ProjectCodes.model.Leave1Validation import leave_1_validation, leave_1_valid_random
 
 np.random.seed(123)
 PARAM_SEARCH_WAY = 2  # 0: GridSearch, 1: RandomizeSearch, 2: SelfNoCV
@@ -270,21 +270,40 @@ class CvGridParams(object):
         if param_type == 'default':
             self.name = param_type
             self.all_params = {
-                'name_emb_dim': [20],  # In name each word's vector length
+                'name_emb_dim': [25],  # In name each word's vector length
                 'item_desc_emb_dim': [60],
-                'category_emb_dim': [10],
-                'brand_emb_dim': [10],
+                'category_emb_dim': [12],
+                'brand_emb_dim': [12],
                 'desc_len_dim': [7],
-                'npc_cnt_dim': [7],
+                'npc_cnt_dim': [3],
                 'GRU_layers_out_dim': [(12, 24)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
                 'bn_flag': [False],  # Batch-Norm switch
                 'dense_layers_unit': [(256, 128, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*2],
-                # 'lr_init': [0.007], # 0.00985],
-                # 'lr_final': [0.0005], # 0.000148],
-                'lr_init': np.linspace(0.0065, 0.0075, 101).tolist(),
-                'lr_final': np.linspace(0.00045, 0.00055, 101).tolist(),
+                'lr_init': [0.0069], # 0.0069 for epochs=2,
+                'lr_final': [0.0005196], # 0.0005196 for epochs=2,
+                # 'lr_init': np.linspace(0.0068, 0.0072, 101).tolist(),
+                # 'lr_final': np.linspace(0.00048, 0.00052, 101).tolist(),
+            }
+        elif param_type == 'epoch3':
+            self.name = param_type
+            self.all_params = {
+                'name_emb_dim': [25],  # In name each word's vector length
+                'item_desc_emb_dim': [60],
+                'category_emb_dim': [12],
+                'brand_emb_dim': [12],
+                'desc_len_dim': [7],
+                'npc_cnt_dim': [3],
+                'GRU_layers_out_dim': [(12, 24), (10, 20), (14, 28)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
+                'bn_flag': [False],  # Batch-Norm switch
+                'dense_layers_unit': [(256, 128, 64), (512, 256, 128, 64), (1024, 512, 256, 128, 64)],
+                'epochs': [3],  # LR parameters
+                'batch_size': [512*2],
+                # 'lr_init': [0.007], # 0.0069 for epochs=2,
+                # 'lr_final': [0.0005], # 0.0005196 for epochs=2,
+                'lr_init': np.linspace(0.0068, 0.0072, 101).tolist(),
+                'lr_final': np.linspace(0.00048, 0.00052, 101).tolist(),
             }
         else:
             print("Construct CvGridParams with error param_type: " + param_type)
@@ -422,7 +441,7 @@ if __name__ == "__main__":
     # cat_fill_type= "fill_paulnull" or "base_name" or "base_brand"
     # brand_fill_type= "fill_paulnull" or "base_other_cols" or "base_NB" or "base_GRU"
     # item_desc_fill_type= 'fill_' or 'fill_paulnull' or 'base_name'
-    data_reader = DataReader(local_flag=LOCAL_FLAG, cat_fill_type='fill_Other', brand_fill_type='fill_missing', item_desc_fill_type='fill_None')
+    data_reader = DataReader(local_flag=LOCAL_FLAG)
     RECORD_LOG('[{:.4f}s] Finished handling missing data...'.format(time.time() - start_time))
 
     data_reader.del_redundant_cols()
@@ -494,8 +513,9 @@ if __name__ == "__main__":
     elif LOCAL_FLAG and PARAM_SEARCH_WAY == 2:
         print('==========Self Leave 1 Validation')
         cv_grid_params.all_params['data_reader'] = [data_reader]
-        best_dict, result_df = leave_1_validation(model_class=SelfLocalRegressor, tuning_params=cv_grid_params.all_params,
-                                                  all_data_df=data_reader.train_df, n_valid=3, test_ratio=0.01, y_col='target', clf_or_reg='reg')
+        best_dict, result_df = leave_1_valid_random(model_class=SelfLocalRegressor, tuning_params=cv_grid_params.all_params,
+                                                    n_params=80,
+                                                    all_data_df=data_reader.train_df, n_valid=3, test_ratio=0.01, y_col='target', clf_or_reg='reg')
 
         str_time = time.strftime("%m-%d_%H_%M", time.localtime(time.time()))
         def save_cv_result(file_):

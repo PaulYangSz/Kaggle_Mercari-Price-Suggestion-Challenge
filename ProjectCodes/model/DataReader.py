@@ -63,14 +63,10 @@ def record_log(local_flag, str_log):
 
 class DataReader():
 
-    def __init__(self, local_flag:bool, cat_fill_type:str, brand_fill_type:str, item_desc_fill_type:str):
-        record_log(local_flag, '\n构建数据DF时使用的参数：\n'
-                    'local_flag={}, cat_fill_type={}, brand_fill_type={}, item_desc_fill_type={}'
-                   .format(local_flag, cat_fill_type, brand_fill_type, item_desc_fill_type))
+    def __init__(self, local_flag:bool):
         TRAIN_FILE = "../input/train.tsv"
         TEST_FILE = "../input/test.tsv"
         self.local_flag = local_flag
-        self.item_desc_fill_type = item_desc_fill_type
 
         if local_flag:
             train_df = pd.read_csv("../" + TRAIN_FILE, sep='\t', engine='python')#, nrows=10000)
@@ -81,60 +77,9 @@ class DataReader():
 
         record_log(local_flag, 'Remain price!=0 items')
         train_df = train_df[train_df['price'] != 0]
-        # record_log(local_flag, 'drop_duplicates()')
-        # train_df_no_id = train_df.drop("train_id", axis=1)
-        # train_df_no_id = train_df_no_id.drop_duplicates()
-        # train_df = train_df.loc[train_df_no_id.index]
 
-        stopwords_list = stopwords.words('english')
-        # stop_patten = re.compile(r'\b(' + r'|'.join(stopwords.words('english')) + r')\b\s*')
-        word_patten = re.compile(r"(\w+(-\w+)+|\w+(\.\w+)+|\w+'\w+|\w+|!+)")
-        def normal_desc(desc):
-            try:
-                filter_words = []
-                for tuple_words in word_patten.findall(desc):
-                    word = tuple_words[0]
-                    if word.lower() not in stopwords_list:
-                        filter_words.append(word)
-                normal_text = " ".join(filter_words)
-                return normal_text
-            except:
-                return ''
-        rm_2_jiage = re.compile(r"\[rm\]")
-        no_mean = re.compile(r"(No description yet|No description)", re.I)  # |\[rm\]
-        def fill_item_description_null(str_desc, replace):
-            if pd.isnull(str_desc):
-                return replace
-            else:
-                changeRM = re.sub(pattern=rm_2_jiage, repl='jiagejine', string=str_desc)
-                left = re.sub(pattern=no_mean, repl=replace, string=changeRM)
-                if len(left) > 2:
-                    return normal_desc(left)
-                else:
-                    return replace
-        if item_desc_fill_type == 'fill_':
-            train_df.loc[:, 'item_description'] = train_df['item_description'].map(lambda x: fill_item_description_null(x, ''))
-            test_df.loc[:, 'item_description'] = test_df['item_description'].map(lambda x: fill_item_description_null(x, ''))
-        elif item_desc_fill_type == 'fill_None':
-            train_df['item_description'].fillna(value="None", inplace=True)
-            test_df['item_description'].fillna(value="None", inplace=True)
-        elif item_desc_fill_type == 'base_name':
-            train_df.loc[:, 'item_description'] = train_df[['item_description', 'name']].apply(lambda x: fill_item_description_null(x.iloc[0], x.iloc[1]), axis=1)
-            test_df.loc[:, 'item_description'] = test_df[['item_description', 'name']].apply(lambda x: fill_item_description_null(x.iloc[0], x.iloc[1]), axis=1)
-        else:
-            print('【错误】：item_desc_fill_type should be: "fill_" or "fill_paulnull" or "base_name"')
-
-
-        # 尝试下对name只做normal但是不去停止词
-        def normal_name(name):
-            try:
-                normal_text = " ".join(list(map(lambda x: x[0], word_patten.findall(name))))
-                return normal_text
-            except:
-                return ''
-
-        # train_df.loc[:, 'name'] = train_df['name'].map(normal_name)
-        # test_df.loc[:, 'name'] = test_df['name'].map(normal_name)
+        train_df['item_description'].fillna(value="None", inplace=True)
+        test_df['item_description'].fillna(value="None", inplace=True)
 
 
         # 统计下description中特殊字符的个数
@@ -149,21 +94,15 @@ class DataReader():
         test_df['desc_npc_cnt'] = test_df['item_description'].map(lambda x: patten_count(x, npc_patten))
 
 
-        # [先把能补充确定的brand填充上，然后再find brand]
-        if brand_fill_type == 'fill_missing':
-            train_df['brand_name'].fillna(value="missing", inplace=True)
-            test_df['brand_name'].fillna(value="missing", inplace=True)
-        else:
-            print('【错误】：brand_fill_type should be: "fill_paulnull" or "base_other_cols" or "base_NB" or "base_GRU" ')
+        # brand填充
+        train_df['brand_name'].fillna(value="missing", inplace=True)
+        test_df['brand_name'].fillna(value="missing", inplace=True)
 
+        train_df['category_name'].fillna(value="Other", inplace=True)
+        test_df['category_name'].fillna(value="Other", inplace=True)
 
+        # 以防万一的填充
 
-
-        if cat_fill_type == 'fill_Other':
-            train_df['category_name'].fillna(value="Other", inplace=True)
-            test_df['category_name'].fillna(value="Other", inplace=True)
-        else:
-            print('【错误】：cat_fill_type should be: "fill_paulnull" others are too cost time: "base_name" or "base_brand"')
 
 
         self.train_df = train_df
@@ -353,7 +292,7 @@ class DataReader():
                 preprocessor=build_preprocessor('desc_npc_cnt'))),
             ('item_description', TfidfVectorizer(
                 # token_pattern=r"(?u)\S+",
-                ngram_range=(1, 2),
+                ngram_range=(1, 3),
                 max_features=100000,
                 preprocessor=build_preprocessor('item_description'))),
         ])

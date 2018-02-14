@@ -297,8 +297,9 @@ def leave_1_valid_random(model_class, tuning_params, n_params, all_data_df, n_va
     best_key_score = -99999.0
     best_params_dict = dict()
     tuning_param_values = list(product(*[tuning_params[key] for key in search_param_list]))
-    np.random.shuffle(tuning_param_values)
-    tuning_param_values = tuning_param_values[:n_params]
+    if n_params < len(tuning_param_values):
+        np.random.shuffle(tuning_param_values)
+        tuning_param_values = tuning_param_values[:n_params]
     start = time.time()
     elapsed = 0
     if n_valid == 1:

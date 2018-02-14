@@ -553,17 +553,18 @@ if __name__ == '__main__':
     print('Train shape: ', train.shape)
     print('Test shape: ', test.shape)
 
-    train = train[train.price > 0.0].reset_index(drop=True)
+    train = train[train.price >= 3.0].reset_index(drop=True)
     print('Train shape without zero price: ', train.shape)
 
     # Split training examples into train/dev examples.
-    train_df, dev_df = train_test_split(train, random_state=347, test_size=0.01)
-    train: pd.DataFrame = pd.concat([train_df, dev_df], axis=0)
-    n_trains = train_df.shape[0]
-    n_devs = dev_df.shape[0]
+    # train_df, dev_df = train_test_split(train, random_state=347, test_size=0.01)
+    # train: pd.DataFrame = pd.concat([train_df, dev_df], axis=0)
+    n_trains = train.shape[0]
+    # n_devs = dev_df.shape[0]
 
     submission: pd.DataFrame = test[['test_id']]
 
+    print("First part: Ridge")
     merge, y_train = preprocess_pandas(train, test, start_time)
 
     meta_params = {'name_ngram': (1, 2),
@@ -675,10 +676,10 @@ if __name__ == '__main__':
     X = tfidf_transformer.fit_transform(sparse_merge)
     print(f'[{time() - start_time}] TF/IDF completed')
 
-    X_train = X[:n_trains+n_devs]
+    X_train = X[:n_trains]
     print(X_train.shape)
 
-    X_test = X[n_trains+n_devs:]
+    X_test = X[n_trains:]
     del sparse_merge
     del vectorizer
     del tfidf_transformer
@@ -688,22 +689,23 @@ if __name__ == '__main__':
     print(f'[{time() - start_time}] Drop only in train or test cols: {X_train.shape[1]}')
     gc.collect()
 
-    X_dev = X_train[n_trains:]
-    X_train = X_train[:n_trains]
-    Y_train = y_train[:n_trains]
-    Y_dev = y_train[n_trains:]
+    # X_dev = X_train[n_trains:]
+    # X_train = X_train[:n_trains]
+    Y_train = y_train#[:n_trains]
+    # Y_dev = y_train[n_trains:]
     ridge = Ridge(solver='auto', fit_intercept=True, alpha=0.4, max_iter=200, normalize=False, tol=0.01)
     ridge.fit(X_train, Y_train)
     print(f'[{time() - start_time}] Train Ridge completed. Iterations: {ridge.n_iter_}')
 
-    print("Evaluating the model on validation data...")
-    dev_pred_R = ridge.predict(X_dev)
-    print(" RMSLE error:", rmsle(Y_dev, dev_pred_R))
+    # print("Evaluating the model on validation data...")
+    # dev_pred_R = ridge.predict(X_dev)
+    # print(" RMSLE error:", rmsle(Y_dev, dev_pred_R))
 
     predsR = ridge.predict(X_test)
     print(f'[{time() - start_time}] Predict Ridge completed.')
 
     # RNN model ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    print("Second part: RNN")
     print("Processing categorical data...")
     le = LabelEncoder()
     le.fit(merge.category_name)
@@ -758,11 +760,11 @@ if __name__ == '__main__':
 
 
     train = merge[:n_trains]
-    dev = merge[n_trains:n_trains + n_devs]
-    test = merge[n_trains + n_devs:]
+    # dev = merge[n_trains:n_trains + n_devs]
+    test = merge[n_trains:]
 
     X_train = get_keras_data(train)
-    X_dev = get_keras_data(dev)
+    # X_dev = get_keras_data(dev)
     X_test = get_keras_data(test)
 
 
@@ -843,13 +845,13 @@ if __name__ == '__main__':
     print("Fitting RNN model to training examples...")
     rnn_model.fit(
         X_train, Y_train, epochs=epochs, batch_size=BATCH_SIZE,
-        validation_data=(X_dev, Y_dev), verbose=10,
+        verbose=10,
     )
 
-    print("Evaluating the model on validation data...")
-    Y_dev_preds_rnn = rnn_model.predict(X_dev, batch_size=BATCH_SIZE)
-    Y_dev_preds_rnn = Y_dev_preds_rnn.reshape(-1)
-    print(" RMSLE error:", rmsle(Y_dev, Y_dev_preds_rnn))
+    # print("Evaluating the model on validation data...")
+    # Y_dev_preds_rnn = rnn_model.predict(X_dev, batch_size=BATCH_SIZE)
+    # Y_dev_preds_rnn = Y_dev_preds_rnn.reshape(-1)
+    # print(" RMSLE error:", rmsle(Y_dev, Y_dev_preds_rnn))
 
     rnn_preds = rnn_model.predict(X_test, batch_size=BATCH_SIZE, verbose=10)
     rnn_preds = rnn_preds.reshape(-1)

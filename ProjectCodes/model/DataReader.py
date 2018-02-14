@@ -489,6 +489,8 @@ class DataReader():
         brands_filling(merge)
         train_df['brand_name'] = merge.iloc[:train_df.shape[0]]['brand_name']
         test_df['brand_name'] = merge.iloc[train_df.shape[0]:]['brand_name']
+        train_df.loc[train_df['brand_name'] == '', 'brand_name'] = "missing"
+        test_df.loc[test_df['brand_name'] == '', 'brand_name'] = "missing"
         del merge
         gc.collect()
 

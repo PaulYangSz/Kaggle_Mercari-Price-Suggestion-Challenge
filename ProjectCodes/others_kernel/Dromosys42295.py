@@ -57,7 +57,7 @@ train_df["target"] = np.log1p(train_df.price)
 # Split training examples into train/dev examples.
 train_df, dev_df = train_test_split(train_df, random_state=347, test_size=0.01)
 
-Y_train = train_df.target.values.reshape(-11, 1)
+Y_train = train_df.target.values.reshape(-1, 1)
 Y_dev = dev_df.target.values.reshape(-1, 1)
 
 # Calculate number of train/dev/test examples.

@@ -1,13 +1,20 @@
 import multiprocessing as mp
 import pandas as pd
 from time import time
+
+from keras import Input, Model
+from keras.layers import Embedding, GRU, concatenate, Flatten, Dense, Activation
+from keras.optimizers import Adam
+from keras.preprocessing.sequence import pad_sequences
+from keras.preprocessing.text import Tokenizer
 from scipy.sparse import csr_matrix
 import os
 from sklearn.linear_model import Ridge
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
 from sklearn.feature_extraction.text import CountVectorizer, HashingVectorizer, TfidfTransformer
 from sklearn.metrics import mean_squared_log_error
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 import numpy as np
 import gc
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -354,8 +361,10 @@ class DropColumnsByDf(BaseEstimator, TransformerMixin):
         return m[:, self.nnz_cols]
 
 
-def get_rmsle(y_true, y_pred):
-    return np.sqrt(mean_squared_log_error(np.expm1(y_true), np.expm1(y_pred)))
+def rmsle(Y, Y_pred):
+    # Y and Y_red have already been in log scale.
+    assert Y.shape == Y_pred.shape
+    return np.sqrt(np.mean(np.square(Y_pred - Y )))
 
 
 def split_cat(text):
@@ -444,10 +453,6 @@ def preprocess_regex(dataset, start_time=time()):
 
 
 def preprocess_pandas(train, test, start_time=time()):
-    train = train[train.price > 0.0].reset_index(drop=True)
-    print('Train shape without zero price: ', train.shape)
-
-    nrow_train = train.shape[0]
     y_train = np.log1p(train["price"])
     merge: pd.DataFrame = pd.concat([train, test])
 
@@ -488,6 +493,16 @@ def preprocess_pandas(train, test, start_time=time()):
         .replace(to_replace='No description yet', value='')
     print(f'[{time() - start_time}] Missing filled.')
 
+    # 统计下description中特殊字符的个数
+    npc_patten = re.compile(r'!')  # '!+'
+    def patten_count(text, patten_):
+        try:
+            # text = text.lower()
+            return len(patten_.findall(text))
+        except:
+            return 0
+    merge['desc_npc_cnt'] = merge['item_description'].map(lambda x: patten_count(x, npc_patten))
+
     preprocess_regex(merge, start_time)
 
     brands_filling(merge)
@@ -506,7 +521,7 @@ def preprocess_pandas(train, test, start_time=time()):
 
     merge.drop(['price', 'test_id', 'train_id'], axis=1, inplace=True)
 
-    return merge, y_train, nrow_train
+    return merge, y_train
 
 
 def intersect_drop_columns(train: csr_matrix, valid: csr_matrix, min_df=0):
@@ -538,9 +553,18 @@ if __name__ == '__main__':
     print('Train shape: ', train.shape)
     print('Test shape: ', test.shape)
 
+    train = train[train.price > 0.0].reset_index(drop=True)
+    print('Train shape without zero price: ', train.shape)
+
+    # Split training examples into train/dev examples.
+    train_df, dev_df = train_test_split(train, random_state=347, test_size=0.01)
+    train: pd.DataFrame = pd.concat([train_df, dev_df], axis=0)
+    n_trains = train_df.shape[0]
+    n_devs = dev_df.shape[0]
+
     submission: pd.DataFrame = test[['test_id']]
 
-    merge, y_train, nrow_train = preprocess_pandas(train, test, start_time)
+    merge, y_train = preprocess_pandas(train, test, start_time)
 
     meta_params = {'name_ngram': (1, 2),
                    'name_max_f': 75000,
@@ -651,11 +675,10 @@ if __name__ == '__main__':
     X = tfidf_transformer.fit_transform(sparse_merge)
     print(f'[{time() - start_time}] TF/IDF completed')
 
-    X_train = X[:nrow_train]
+    X_train = X[:n_trains+n_devs]
     print(X_train.shape)
 
-    X_test = X[nrow_train:]
-    del merge
+    X_test = X[n_trains+n_devs:]
     del sparse_merge
     del vectorizer
     del tfidf_transformer
@@ -665,13 +688,180 @@ if __name__ == '__main__':
     print(f'[{time() - start_time}] Drop only in train or test cols: {X_train.shape[1]}')
     gc.collect()
 
+    X_dev = X_train[n_trains:]
+    X_train = X_train[:n_trains]
+    Y_train = y_train[:n_trains]
+    Y_dev = y_train[n_trains:]
     ridge = Ridge(solver='auto', fit_intercept=True, alpha=0.4, max_iter=200, normalize=False, tol=0.01)
-    ridge.fit(X_train, y_train)
+    ridge.fit(X_train, Y_train)
     print(f'[{time() - start_time}] Train Ridge completed. Iterations: {ridge.n_iter_}')
+
+    print("Evaluating the model on validation data...")
+    dev_pred_R = ridge.predict(X_dev)
+    print(" RMSLE error:", rmsle(Y_dev, dev_pred_R))
 
     predsR = ridge.predict(X_test)
     print(f'[{time() - start_time}] Predict Ridge completed.')
 
-    submission.loc[:, 'price'] = np.expm1(predsR)
-    submission.loc[submission['price'] < 0.0, 'price'] = 0.0
-    submission.to_csv("submission_ridge.csv", index=False)
+    # RNN model ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    print("Processing categorical data...")
+    le = LabelEncoder()
+    le.fit(merge.category_name)
+    merge.category_name = le.transform(merge.category_name)
+    le.fit(merge.brand_name)
+    merge.brand_name = le.transform(merge.brand_name)
+    del le
+
+    print("Transforming text data to sequences...")
+    name_raw_text = merge.name.str.lower()
+    desc_raw_text = merge.item_description.str.lower()
+    print("## Separate name|desc Token(), 25w & 60w")
+
+    print("   Fitting tokenizer...")
+    name_tok_raw = Tokenizer(num_words=250000)
+    desc_tok_raw = Tokenizer(num_words=600000)
+    name_tok_raw.fit_on_texts(name_raw_text)
+    desc_tok_raw.fit_on_texts(desc_raw_text)
+
+    print("   Transforming text to sequences...")
+    merge['seq_item_description'] = desc_tok_raw.texts_to_sequences(merge.item_description.str.lower())
+    merge['desc_len'] = merge['seq_item_description'].map(len)
+    merge['seq_name'] = name_tok_raw.texts_to_sequences(merge.name.str.lower())
+
+    # Define constants to use when define RNN model
+    MAX_NAME_SEQ = 10
+    MAX_ITEM_DESC_SEQ = 75
+    NAME_MAX_TEXT = min(max(name_tok_raw.word_index.values()), name_tok_raw.num_words) + 2
+    DESC_MAX_TEXT = min(max(desc_tok_raw.word_index.values()), desc_tok_raw.num_words) + 2
+    del name_tok_raw, desc_tok_raw
+    MAX_CATEGORY = np.max(merge.category_name.max()) + 1
+    MAX_BRAND = np.max(merge.brand_name.max()) + 1
+    merge.item_condition_id = merge.item_condition_id.astype(int)
+    merge.shipping = merge.shipping.astype(int)
+    MAX_CONDITION = np.max(merge.item_condition_id.max()) + 1
+    MAX_DESC_LEN = np.max(merge.desc_len.max()) + 1
+    MAX_NPC_CNT = np.max(merge.desc_npc_cnt.max()) + 1
+
+
+    def get_keras_data(df):
+        X = {
+            'name': pad_sequences(df.seq_name, maxlen=MAX_NAME_SEQ),
+            'item_desc': pad_sequences(df.seq_item_description, maxlen=MAX_ITEM_DESC_SEQ),
+            'brand_name': np.array(df.brand_name),
+            'category_name': np.array(df.category_name),
+            'item_condition': np.array(df.item_condition_id),
+            'desc_len': np.array(df.desc_len),
+            'desc_npc_cnt': np.array(df.desc_npc_cnt),
+            'num_vars': np.array(df[["shipping"]]),
+        }
+        return X
+
+
+    train = merge[:n_trains]
+    dev = merge[n_trains:n_trains + n_devs]
+    test = merge[n_trains + n_devs:]
+
+    X_train = get_keras_data(train)
+    X_dev = get_keras_data(dev)
+    X_test = get_keras_data(test)
+
+
+    def new_rnn_model(lr=0.001, decay=0.0):
+        # Inputs
+        name = Input(shape=[X_train["name"].shape[1]], name="name")
+        item_desc = Input(shape=[X_train["item_desc"].shape[1]], name="item_desc")
+        brand_name = Input(shape=[1], name="brand_name")
+        category_name = Input(shape=[1], name="category_name")
+        item_condition = Input(shape=[1], name="item_condition")
+        desc_len = Input(shape=[1], name="desc_len")
+        desc_npc_cnt = Input(shape=[1], name="desc_npc_cnt")
+        num_vars = Input(shape=[X_train["num_vars"].shape[1]], name="num_vars")
+
+        # Embeddings layers
+        emb_name = Embedding(NAME_MAX_TEXT, 25)(name)
+        emb_item_desc = Embedding(DESC_MAX_TEXT, 60)(item_desc)
+        emb_brand_name = Embedding(MAX_BRAND, 12)(brand_name)
+        emb_category_name = Embedding(MAX_CATEGORY, 12)(category_name)
+        emb_desc_len = Embedding(MAX_CATEGORY, 7)(desc_len)
+        emb_desc_npc_cnt = Embedding(MAX_NPC_CNT, 3)(desc_npc_cnt)
+
+        # rnn layers
+        rnn_layer1 = GRU(24)(emb_item_desc)
+        rnn_layer2 = GRU(12)(emb_name)
+        print("GRU({})+GRU({})".format(24, 12))
+
+        # main layers
+        main_l = concatenate([
+            Flatten()(emb_brand_name),
+            Flatten()(emb_category_name),
+            Flatten()(emb_desc_len),
+            Flatten()(emb_desc_npc_cnt),
+            item_condition,
+            rnn_layer1,
+            rnn_layer2,
+            num_vars,
+        ])
+
+        main_l = Dense(256)(main_l)
+        main_l = Activation('relu')(main_l)
+        print("1st Dense({}) is relu".format(256))
+
+        main_l = Dense(128)(main_l)
+        main_l = Activation('elu')(main_l)
+
+        main_l = Dense(64)(main_l)
+        main_l = Activation('elu')(main_l)
+
+        # the output layer.
+        output = Dense(1, activation="linear")(main_l)
+
+        model = Model([name, item_desc, brand_name, category_name, item_condition, desc_len, desc_npc_cnt, num_vars],
+                      output)
+
+        optimizer = Adam(lr=lr, decay=decay)
+        model.compile(loss="mse", optimizer=optimizer)
+
+        return model
+
+
+    model = new_rnn_model()
+    model.summary()
+    del model
+
+    # Set hyper parameters for the model.
+    BATCH_SIZE = 1024
+    epochs = 2
+
+    # Calculate learning rate decay.
+    exp_decay = lambda init, fin, steps: (init / fin) ** (1 / (steps - 1)) - 1
+    steps = int(n_trains / BATCH_SIZE) * epochs
+    lr_init, lr_fin = 0.0069, 0.0005196
+    lr_decay = exp_decay(lr_init, lr_fin, steps)
+
+    rnn_model = new_rnn_model(lr=lr_init, decay=lr_decay)
+
+    print("Fitting RNN model to training examples...")
+    rnn_model.fit(
+        X_train, Y_train, epochs=epochs, batch_size=BATCH_SIZE,
+        validation_data=(X_dev, Y_dev), verbose=10,
+    )
+
+    print("Evaluating the model on validation data...")
+    Y_dev_preds_rnn = rnn_model.predict(X_dev, batch_size=BATCH_SIZE)
+    Y_dev_preds_rnn = Y_dev_preds_rnn.reshape(-1)
+    print(" RMSLE error:", rmsle(Y_dev, Y_dev_preds_rnn))
+
+    rnn_preds = rnn_model.predict(X_test, batch_size=BATCH_SIZE, verbose=10)
+    rnn_preds = rnn_preds.reshape(-1)
+    rnn_preds = np.expm1(rnn_preds)
+
+    predsR = np.expm1(predsR)
+    def aggregate_predicts(Y1, Y2):
+        assert Y1.shape == Y2.shape
+        ratio = 0.5
+        return Y1 * ratio + Y2 * (1.0 - ratio)
+    submission.loc[:, 'price'] = aggregate_predicts(predsR, rnn_preds)
+    submission.loc[submission['price'] < 3.0, 'price'] = 3.0
+    submission.to_csv("submission_ridge_rnn.csv", index=False)
+
+

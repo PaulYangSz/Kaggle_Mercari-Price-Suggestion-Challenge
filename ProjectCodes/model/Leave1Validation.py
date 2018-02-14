@@ -39,6 +39,7 @@ def score_validation(ml_model, valid_X, valid_y, clf_or_reg, result_df, i, i_val
         result_df.loc[index, "test(f1_weighted)_{}".format(i_valid+1)] = f1_score(y_true=valid_y, y_pred=pred_y, average='weighted')
     else:
         result_df.loc[index, "test(mean_squared)_{}".format(i_valid+1)] = mean_squared_error(y_true=valid_y, y_pred=pred_y)
+        print("test(mean_squared)_{}={}".format(i_valid+1, result_df.loc[index, "test(mean_squared)_{}".format(i_valid+1)]))
         result_df.loc[index, "test(r2)_{}".format(i_valid+1)] = r2_score(y_true=valid_y, y_pred=pred_y)
 
 

@@ -28,7 +28,6 @@ from keras import backend as K
 from keras.optimizers import Adam, Adadelta, Adagrad, Adamax, RMSprop
 import logging
 import logging.config
-import lightgbm as lgb
 
 from ProjectCodes.model.Leave1Validation import leave_1_validation, leave_1_valid_random
 
@@ -109,7 +108,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
     """
 
     def __init__(self, data_reader:DataReader, name_emb_dim=20, item_desc_emb_dim=60, brand_emb_dim=10, category_emb_dim=10,
-                 desc_len_dim=7, npc_cnt_dim=7,
+                 desc_len_dim=7, npc_cnt_dim=7, cat_cond_emb_dim=12,
                  GRU_layers_out_dim=(8, 16), bn_flag=False, dense_layers_unit=(128, 64),
                  epochs=3, batch_size=512*3, lr_init=0.015, lr_final=0.007):
         self.data_reader = data_reader
@@ -117,6 +116,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         self.item_desc_emb_dim = item_desc_emb_dim
         self.brand_emb_dim = brand_emb_dim
         self.category_emb_dim = category_emb_dim
+        self.cat_cond_emb_dim = cat_cond_emb_dim
         self.desc_len_dim = desc_len_dim
         self.npc_cnt_dim = npc_cnt_dim
         self.GRU_layers_out_dim = GRU_layers_out_dim
@@ -140,6 +140,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         item_desc = Input(shape=[reader.item_desc_seq_len], name="item_desc")
         item_condition = Input(shape=[1], name="item_condition")
         category = Input(shape=[1], name="category")
+        cat_cond = Input(shape=[1], name="cat_cond")
         brand = Input(shape=[1], name="brand")
         num_vars = Input(shape=[1], name="num_vars")
         desc_len = Input(shape=[1], name="desc_len")
@@ -152,6 +153,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         emb_name = Embedding(input_dim=reader.n_name_dict_words, output_dim=self.name_emb_dim)(name)
         emb_item_desc = Embedding(reader.n_desc_dict_words, self.item_desc_emb_dim)(item_desc)  # [None, MAX_ITEM_DESC_SEQ, emb_size]
         emb_category = Embedding(reader.n_category, self.category_emb_dim)(category)
+        emb_cat_cond = Embedding(reader.n_cat_cond, self.cat_cond_emb_dim)(cat_cond)
         emb_brand = Embedding(reader.n_brand, self.brand_emb_dim)(brand)
         emb_desc_len = Embedding(reader.n_desc_max_len, self.desc_len_dim)(desc_len)
         emb_desc_npc_cnt = Embedding(reader.n_npc_max_cnt, self.npc_cnt_dim)(desc_npc_cnt)
@@ -165,6 +167,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         # 连接列表中的Tensor，按照axis组成一个大的Tensor
         main_layer = concatenate([Flatten()(emb_brand),  # [None, 1, 10] -> [None, 10]
                                   Flatten()(emb_category),
+                                  Flatten()(emb_cat_cond),
                                   Flatten()(emb_desc_len),
                                   Flatten()(emb_desc_npc_cnt),
                                   item_condition,
@@ -185,7 +188,7 @@ class SelfLocalRegressor(BaseEstimator, RegressorMixin):
         output = Dense(1, activation="linear")(main_layer)
 
         # model
-        model = Model(inputs=[name, item_desc, brand, category, item_condition, num_vars, desc_len, desc_npc_cnt],
+        model = Model(inputs=[name, item_desc, brand, category, cat_cond, item_condition, num_vars, desc_len, desc_npc_cnt],
                       outputs=output)
         # optimizer = optimizers.RMSprop()
         optimizer = Adam(lr=0.001, decay=0.0)
@@ -273,18 +276,19 @@ class CvGridParams(object):
                 'name_emb_dim': [25],  # In name each word's vector length
                 'item_desc_emb_dim': [60],
                 'category_emb_dim': [12],
-                'brand_emb_dim': [12],
+                'cat_cond_emb_dim': [14],
+                'brand_emb_dim': [10],
                 'desc_len_dim': [7],
                 'npc_cnt_dim': [3],
                 'GRU_layers_out_dim': [(12, 24)],  # GRU hidden units (rnn_layer_name, rnn_layer_item_desc)
                 'bn_flag': [False],  # Batch-Norm switch
-                'dense_layers_unit': [(256, 128, 64)],
+                'dense_layers_unit': [(256, 128, 64), (512, 256, 64)],
                 'epochs': [2],  # LR parameters
                 'batch_size': [512*2],
-                'lr_init': [0.0069], # 0.0069 for epochs=2,
-                'lr_final': [0.0005196], # 0.0005196 for epochs=2,
-                # 'lr_init': np.linspace(0.0068, 0.0072, 101).tolist(),
-                # 'lr_final': np.linspace(0.00048, 0.00052, 101).tolist(),
+                # 'lr_init': [0.0069], # 0.0069 for epochs=2,
+                # 'lr_final': [0.0005196], # 0.0005196 for epochs=2,
+                'lr_init': np.linspace(0.0068, 0.0072, 101).tolist(),
+                'lr_final': np.linspace(0.00048, 0.00052, 101).tolist(),
             }
         elif param_type == 'epoch3':
             self.name = param_type

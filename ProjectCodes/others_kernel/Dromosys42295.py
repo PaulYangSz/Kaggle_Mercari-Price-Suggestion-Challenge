@@ -22,7 +22,7 @@ def rmsle(Y, Y_pred):
     return np.sqrt(np.mean(np.square(Y_pred - Y )))
 
 train_df = pd.read_table('../input/train.tsv')
-test_df = pd.read_table('../input/test.tsv')
+test_df = pd.read_table('../input/test_stg2.tsv')
 print(train_df.shape, test_df.shape)
 
 
@@ -467,8 +467,8 @@ del le
 
 
 print("Transforming text data to sequences...")
-name_raw_text = full_df.name.str.lower()
-desc_raw_text = full_df.item_description.str.lower()
+name_raw_text = train_df.name.str.lower()
+desc_raw_text = train_df.item_description.str.lower()
 print("## Separate name|desc Token(), 25w & 60w")
 
 print("   Fitting tokenizer...")
@@ -611,88 +611,7 @@ rnn_preds = rnn_model.predict(X_test, batch_size=BATCH_SIZE, verbose=10)
 rnn_preds = np.expm1(rnn_preds)
 
 
-
-# Concatenate train - dev - test data for easy to handle
-full_df = pd.concat([train_df, dev_df, test_df])
-
-# Convert data type to string
-full_df['shipping'] = full_df['shipping'].astype(str)
-full_df['item_condition_id'] = full_df['item_condition_id'].astype(str)
-full_df['desc_len'] = full_df['desc_len'].astype(str)
-full_df['desc_npc_cnt'] = full_df['desc_npc_cnt'].astype(str)
-
-
-print("Vectorizing data...")
-default_preprocessor = CountVectorizer().build_preprocessor()
-def build_preprocessor(field):
-    field_idx = list(full_df.columns).index(field)
-    return lambda x: default_preprocessor(x[field_idx])
-
-vectorizer = FeatureUnion([
-    ('name', CountVectorizer(
-        ngram_range=(1, 2),
-        max_features=50000,
-        preprocessor=build_preprocessor('name'))),
-    ('category_name', CountVectorizer(
-        token_pattern='.+',
-        preprocessor=build_preprocessor('category_name'))),
-    ('brand_name', CountVectorizer(
-        token_pattern='.+',
-        preprocessor=build_preprocessor('brand_name'))),
-    ('shipping', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('shipping'))),
-    ('item_condition_id', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('item_condition_id'))),
-    ('desc_len', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('desc_len'))),
-    ('desc_npc_cnt', CountVectorizer(
-        token_pattern='\d+',
-        preprocessor=build_preprocessor('desc_npc_cnt'))),
-    ('item_description', TfidfVectorizer(
-        ngram_range=(1, 3),
-        max_features=100000,
-        preprocessor=build_preprocessor('item_description'))),
-])
-
-X = vectorizer.fit_transform(full_df.values)
-
-X_train = X[:n_trains]
-X_dev = X[n_trains:n_trains+n_devs]
-X_test = X[n_trains+n_devs:]
-
-print(X.shape, X_train.shape, X_dev.shape, X_test.shape)
-
-
-print("Fitting Ridge model on training examples...")
-ridge_model = Ridge(
-    solver='auto', fit_intercept=True, alpha=0.5,
-    max_iter=100, normalize=False, tol=0.05,
-)
-ridge_model.fit(X_train, Y_train)
-
-
-Y_dev_preds_ridge = ridge_model.predict(X_dev)
-Y_dev_preds_ridge = Y_dev_preds_ridge.reshape(-1, 1)
-print("RMSL error on dev set:", rmsle(Y_dev, Y_dev_preds_ridge))
-
-
-ridge_preds = ridge_model.predict(X_test)
-ridge_preds = np.expm1(ridge_preds)
-
-
-def aggregate_predicts(Y1, Y2):
-    assert Y1.shape == Y2.shape
-    ratio = 0.65
-    return Y1 * ratio + Y2 * (1.0 - ratio)
-
-Y_dev_preds = aggregate_predicts(Y_dev_preds_rnn, Y_dev_preds_ridge)
-print("RMSL error for RNN + Ridge on dev set:", rmsle(Y_dev, Y_dev_preds))
-
-
-preds = aggregate_predicts(rnn_preds, ridge_preds)
+preds = rnn_preds
 preds[preds < 3] = 3
 preds[preds > 2000] = 2000
 submission = pd.DataFrame({

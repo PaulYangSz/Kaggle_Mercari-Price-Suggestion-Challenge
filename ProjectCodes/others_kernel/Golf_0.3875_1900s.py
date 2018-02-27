@@ -64,10 +64,10 @@ def main():
         on_field('text', Tfidf(max_features=100000, token_pattern='\w+', ngram_range=(1, 2))),
         on_field(['shipping', 'item_condition_id'],
                  FunctionTransformer(to_records, validate=False), DictVectorizer()),
-        n_jobs=4)
+        n_jobs=1)
     y_scaler = StandardScaler()
     with timer('process train'):
-        train = pd.read_table('../input/train.tsv')
+        train = pd.read_table('../../input/train.tsv', engine='python')
         train = train[train['price'] > 0].reset_index(drop=True)
         cv = KFold(n_splits=20, shuffle=True, random_state=42)
         train_ids, valid_ids = next(cv.split(train))
@@ -78,7 +78,7 @@ def main():
         del train
     with timer('process valid'):
         X_valid = vectorizer.transform(preprocess(valid)).astype(np.float32)
-    with ThreadPool(processes=4) as pool:
+    with ThreadPool(processes=1) as pool:
         Xb_train, Xb_valid = [x.astype(np.bool).astype(np.float32) for x in [X_train, X_valid]]
         xs = [[Xb_train, Xb_valid], [X_train, X_valid]] * 2
         y_pred = np.mean(pool.map(partial(fit_predict, y_train=y_train), xs), axis=0)
@@ -88,3 +88,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+    # [Original]: Valid RMSLE: 0.3875
+    # [Original - y_scaler]: Valid RMSLE: 0.4012

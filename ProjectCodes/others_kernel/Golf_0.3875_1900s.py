@@ -79,6 +79,7 @@ def main():
     with timer('process valid'):
         X_valid = vectorizer.transform(preprocess(valid)).astype(np.float32)
     with ThreadPool(processes=1) as pool:
+        # Xb = [1.0, 0.0] when value is not 0.0 = 1.0 else 0.0
         Xb_train, Xb_valid = [x.astype(np.bool).astype(np.float32) for x in [X_train, X_valid]]
         xs = [[Xb_train, Xb_valid], [X_train, X_valid]] * 2
         y_pred = np.mean(pool.map(partial(fit_predict, y_train=y_train), xs), axis=0)
@@ -90,3 +91,8 @@ if __name__ == '__main__':
     main()
     # [Original]: Valid RMSLE: 0.3875
     # [Original - y_scaler]: Valid RMSLE: 0.4012
+    # [Original rm *2]: Valid RMSLE: 0.3934
+    # [Original use * 4]: Valid RMSLE: 0.3847
+    # [Original instead Xb_]: Valid RMSLE: 0.3899
+    # [Original flat name & text]: Valid RMSLE: 0.3927
+    # [Original + !+]: Valid RMSLE: 0.4246

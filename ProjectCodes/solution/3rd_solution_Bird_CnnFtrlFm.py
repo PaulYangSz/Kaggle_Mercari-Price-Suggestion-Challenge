@@ -912,6 +912,7 @@ from keras.engine.topology import Layer, InputSpec
 from keras.utils import conv_utils
 
 
+# 截取input第三维上的长度as output
 class Cropping1D(Layer):
     def __init__(self, cropping=(1, 1), **kwargs):
         super(Cropping1D, self).__init__(**kwargs)
@@ -962,14 +963,17 @@ class Attention(Layer):
     def build(self, input_shape):
         assert len(input_shape) == 3
 
+        # W的shape为(input的最后一维长度相等,) 因为不是Seq2Seq，而是Seq2One，所以W的作用相当于y的前一个状态值，用于和每个Xi计算相似度
         self.W = self.add_weight((input_shape[-1],),
                                  initializer=self.init,
                                  name='{}_W'.format(self.name),
                                  regularizer=self.W_regularizer,
                                  constraint=self.W_constraint)
+        # feats_dim为input的最后一维长度
         self.features_dim = input_shape[-1]
 
         if self.bias:
+            # b与input第一维数据长度相等
             self.b = self.add_weight((input_shape[1],),
                                      initializer='zero',
                                      name='{}_b'.format(self.name),
@@ -984,19 +988,20 @@ class Attention(Layer):
         return None
 
     def call(self, x, mask=None):
-        input_shape = K.int_shape(x)
-        features_dim = self.features_dim
-        step_dim = input_shape[1]
+        input_shape = K.int_shape(x)  # input的维数==3
+        features_dim = self.features_dim  # input最后一维的长度
+        step_dim = input_shape[1]  # input中间维度的长度也就是step的长度
+        # eij = K.reshape([batch_size*steps, feats_dim] dot* [feats_dim, 1], (-1, steps)) = [batch_size, steps]
         eij = K.reshape(K.dot(K.reshape(x, (-1, features_dim)), K.reshape(self.W, (features_dim, 1))), (-1, step_dim))
         if self.bias:
             eij += self.b[:input_shape[1]]
-        eij = K.tanh(eij)
+        eij = K.tanh(eij)  # value to [-1, 1]
         a = K.exp(eij)
         if mask is not None:
             a *= K.cast(mask, K.floatx())
-        a /= K.cast(K.sum(a, axis=1, keepdims=True) + K.epsilon(), K.floatx())
-        a = K.expand_dims(a)
-        weighted_input = x * a
+        a /= K.cast(K.sum(a, axis=1, keepdims=True) + K.epsilon(), K.floatx())  # exp() then sum() is Softmax
+        a = K.expand_dims(a)  # [batch_size, steps, 1]
+        weighted_input = x * a  # [batch_size, steps, feats_dim] 直接用x与系数a相乘
         return K.sum(weighted_input, axis=1)
 
     def get_w(self, x, mask=None):
@@ -1010,7 +1015,7 @@ class Attention(Layer):
         a = K.exp(eij)
         if mask is not None:
             a *= K.cast(mask, K.floatx())
-        a /= K.cast(K.sum(a, axis=1, keepdims=True) + K.epsilon(), K.floatx())
+        a /= K.cast(K.sum(a, axis=1, keepdims=True) + K.epsilon(), K.floatx())  # [batch_size, steps]
         return a
 
     def compute_output_shape(self, input_shape):
@@ -1193,15 +1198,15 @@ indexcatesub = testdf['general_cat']
 del (testdf)
 
 if True:
-    input1 = Input(shape=(sub_featlen.shape[1],), dtype='float32')
-    input2 = Input(shape=(1,), dtype='int32')
+    input1 = Input(shape=(sub_featlen.shape[1],), dtype='float32')  # featlen
+    input2 = Input(shape=(1,), dtype='int32')  # id3
     embedding_layer0 = Embedding(index3,
                                  30, init=RandomNormal(mean=0.0, stddev=0.005),
                                  input_length=1,
                                  trainable=True)
     xc3 = embedding_layer0(input2)
     xc3 = Flatten()(xc3)
-    input3 = Input(shape=(FEAT_LENGTH - FIX_LEN,), dtype='int32')
+    input3 = Input(shape=(FEAT_LENGTH - FIX_LEN,), dtype='int32')  # txt
     embedding_layer0 = Embedding(wordnum,
                                  40,
                                  init=RandomNormal(mean=0.0, stddev=0.005),
@@ -1230,7 +1235,7 @@ if True:
     x1 = att(x30)
     la.append(x1)
 
-    input4 = Input(shape=(FEAT_LENGTH2,), dtype='int32')
+    input4 = Input(shape=(FEAT_LENGTH2,), dtype='int32')  # txtn
     embedding_layer0 = Embedding(wordnum,
                                  50,
                                  init=RandomNormal(mean=0.0, stddev=0.005),
